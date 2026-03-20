@@ -24,7 +24,7 @@ Flashing instructions below.
 - Supports **touch control** for scan mode, channel, hop speed, and SD logging
 - Logs detected events to **CSV on SD card**
 - Uses custom image headers for normal scan, alert state, packet capture, SD status, and splash boot screen
-- Includes **RGB LED status feedback** for scan, alert, and SD write states
+- Includes **RGB LED status feedback** for scan, alert, and SD write states (Green for scanning, Red when deauth packets sniffed and Blue when logging.)
 
 ## 🎛️ Hardware / software
 
