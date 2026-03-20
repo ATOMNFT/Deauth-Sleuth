@@ -4,6 +4,10 @@
 
 Deauth Sleuth is a touchscreen ESP32 Wi-Fi monitoring project for the **ESP32-2432S028R**. It watches nearby 802.11 traffic in promiscuous mode, highlights **deauthentication / disassociation activity**, and shows live status on the built-in TFT with custom graphics and touch controls.
 
+# UI Overview
+![UI overview](images/ui-overview.png)
+
+
 ## What it does
 
 - Scans Wi-Fi traffic in **Auto Scan** or **Manual Scan**
@@ -57,7 +61,11 @@ millis,channel,type,frame_subtype_hex,rssi,reason_code,source_mac,dest_mac,bssid
 
 This makes it easier to review captured events later in a spreadsheet or log viewer.
 
-# Project images
+## Flashing in Arduino IDE
 
-### UI overview
-![UI overview](images/ui-overview.png)
+To flash this project in Arduino IDE, open the sketch and select **LOLIN D32** as the board.
+Although the hardware target is the **ESP32-2432S028R (Cheap Yellow Display / CYD)**, this board option is used for compiling and uploading in Arduino IDE.
+
+This project also relies on **TFT_eSPI**, so your display configuration must match the CYD hardware. A compatible **User_Setup** file has been included in the repo if needed.
+
+Once the board and port are selected, compile and upload normally.
