@@ -8,9 +8,9 @@ Flashing instructions below.
 # 🏗️ Project Images
 
 ### UI Overview
-![UI overview](images/ui-overview.png)
+![UI overview](Images/ui-overview.png)
 ### Splash/Boot Screen
-![Boot Screen](images/boot.png)
+![Boot Screen](Images/boot.png)
 
 
 # What it does
