@@ -61,10 +61,3 @@ This makes it easier to review captured events later in a spreadsheet or log vie
 
 ### UI overview
 ![UI overview](images/ui-overview.png)
-
-### Alert / deauth state
-![Alert state](images/alert-state.png)
-
-### SD logging state
-![SD logging](images/sd-logging.png)
-
