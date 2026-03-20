@@ -71,19 +71,3 @@ This makes it easier to review captured events later in a spreadsheet or log vie
 ### SD logging state
 ![SD logging](images/sd-logging.png)
 
-## Notes
-
-This project is built around the current working `.ino` base for this hardware and display setup. If an older `deauth_log.csv` already exists on the SD card, delete it before testing the newer expanded CSV format so a fresh header can be created.
-
-## Replace the placeholders
-
-The images in `images/` are simple placeholders so the repo looks clean right away. Replace them later with:
-
-- real photos of the device
-- TFT screenshots
-- wiring photos
-- project banner art
-
-## Credits
-
-Created by **ATOMNFT / Stephen**
