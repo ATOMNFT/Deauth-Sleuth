@@ -1,4 +1,4 @@
-# Deauth Sleuth
+# Deauth Sleuth v1
 
 ![Deauth Sleuth header](Images/header-image.png)
 
