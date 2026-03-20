@@ -1,8 +1,10 @@
-![Platform](https://img.shields.io/badge/Platform-ESP32-2C7BE5?style=for-the-badge)
-![Board](https://img.shields.io/badge/Board-ESP32--2432S028R-F59E0B?style=for-the-badge)
-![Framework](https://img.shields.io/badge/Framework-Arduino-00979D?style=for-the-badge)
-![Detection](https://img.shields.io/badge/Detection-Deauth_%2F_Disassoc-DC2626?style=for-the-badge)
-![Logging](https://img.shields.io/badge/Logging-SD_CSV-14B8A6?style=for-the-badge)
+![Platform](https://img.shields.io/badge/Platform-ESP32-228B22?style=for-the-badge)
+![Board](https://img.shields.io/badge/Board-ESP32--2432S028R-2E8B57?style=for-the-badge)
+![Framework](https://img.shields.io/badge/Framework-Arduino-3CB371?style=for-the-badge)
+![Detection](https://img.shields.io/badge/Detection-Deauth%20%2F%20Disassoc-B22222?style=for-the-badge)
+![Display](https://img.shields.io/badge/Display-TFT_eSPI-32CD32?style=for-the-badge)
+![Touch](https://img.shields.io/badge/Touch-Enabled-16A34A?style=for-the-badge)
+![Logging](https://img.shields.io/badge/Logging-SD%20CSV-15803D?style=for-the-badge)
 ![Status](https://img.shields.io/badge/Status-Working-22C55E?style=for-the-badge)
 
 # 🔎 Deauth Sleuth v1
