@@ -1,3 +1,10 @@
+![Platform](https://img.shields.io/badge/Platform-ESP32-2C7BE5?style=for-the-badge)
+![Board](https://img.shields.io/badge/Board-ESP32--2432S028R-F59E0B?style=for-the-badge)
+![Framework](https://img.shields.io/badge/Framework-Arduino-00979D?style=for-the-badge)
+![Detection](https://img.shields.io/badge/Detection-Deauth_%2F_Disassoc-DC2626?style=for-the-badge)
+![Logging](https://img.shields.io/badge/Logging-SD_CSV-14B8A6?style=for-the-badge)
+![Status](https://img.shields.io/badge/Status-Working-22C55E?style=for-the-badge)
+
 # 🔎 Deauth Sleuth v1
 
 ![Deauth Sleuth header](Images/header-image.png)
