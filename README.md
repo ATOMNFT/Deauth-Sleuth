@@ -10,7 +10,7 @@ Flashing instructions below.
 ### UI Overview
 ![UI overview](images/ui-overview.png)
 ### Splash/Boot Screen
-![Boot Screen](images/ui-overview.png)
+![Boot Screen](images/boot.png)
 
 
 # What it does
