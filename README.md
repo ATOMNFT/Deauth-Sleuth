@@ -9,7 +9,10 @@ Flashing instructions below.
 
 <h3>UI Overview</h3>
 <p align="center">
-  <img src="Images/ui-overview.jpg" alt="UI overview" width="30%" />
+  <img src="Images/ui-overview.jpg" alt="UI overview" width="34%" />
+</p>
+
+<p align="center">
   <img src="Images/auto.jpg" alt="Auto State" width="30%" />
   <img src="Images/manu.jpg" alt="Manual State" width="30%" />
   <img src="Images/led.jpg" alt="LED Status" width="30%" />
