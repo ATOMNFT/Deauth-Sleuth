@@ -57,10 +57,7 @@ millis,channel,type,frame_subtype_hex,rssi,reason_code,source_mac,dest_mac,bssid
 
 This makes it easier to review captured events later in a spreadsheet or log viewer.
 
-## Project images
-
-### Header / banner
-![](images/header-image.png)
+# Project images
 
 ### UI overview
 ![UI overview](images/ui-overview.png)
