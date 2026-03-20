@@ -2,7 +2,8 @@
 
 ![Deauth Sleuth header](Images/header-image.png)
 
-Deauth Sleuth is a touchscreen ESP32 Wi-Fi monitoring project for the **ESP32-2432S028R**. It watches nearby 802.11 traffic in promiscuous mode, highlights **deauthentication / disassociation activity**, and shows live status on the built-in TFT with custom graphics and touch controls.
+Deauth Sleuth is a touchscreen ESP32 Wi-Fi monitoring project for the **ESP32-2432S028R**. It watches nearby 802.11 traffic in promiscuous mode, highlights **deauthentication / disassociation activity**, and shows live status on the built-in TFT with custom graphics and touch controls. <br>
+Flashing instructions below.
 
 # UI Overview
 ![UI overview](images/ui-overview.png)
