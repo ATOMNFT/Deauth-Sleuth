@@ -60,16 +60,16 @@ This makes it easier to review captured events later in a spreadsheet or log vie
 ## Project images
 
 ### Header / banner
-![Project header placeholder](images/header-image.png)
+![](images/header-image.png)
 
 ### UI overview
-![UI overview placeholder](images/ui-overview.png)
+![UI overview](images/ui-overview.png)
 
 ### Alert / deauth state
-![Alert state placeholder](images/alert-state.png)
+![Alert state](images/alert-state.png)
 
 ### SD logging state
-![SD logging placeholder](images/sd-logging.png)
+![SD logging](images/sd-logging.png)
 
 ## Notes
 
