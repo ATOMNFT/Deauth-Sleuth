@@ -1,0 +1,6 @@
+{
+  "name": "Deauth Sleuth Flasher",
+  "version": "1.0",
+  "description": "This tools allows you to flash Deauth Sleuth firmware onto a CYD or CYD 2USB.",
+  "icon": "Images/cyd-icon.png"
+}
