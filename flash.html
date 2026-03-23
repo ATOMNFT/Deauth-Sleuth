@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Deauth Sleuth • Web Flasher</title>
+  <meta name="description" content="Futuristic glass-style web flasher page for the Deauth Sleuth ESP32 touchscreen Wi-Fi monitoring firmware." />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="dark" />
+  <script type="module" src="https://unpkg.com/esp-web-tools@8.0.1/dist/web/install-button.js?module"></script>
+  <style>
+    :root {
+      --bg: #060608;
+      --panel: rgba(18, 18, 26, 0.72);
+      --panel-strong: rgba(28, 18, 40, 0.8);
+      --text: #f5f7ff;
+      --muted: #b7bed6;
+      --violet: #8b5cf6;
+      --violet-soft: rgba(139, 92, 246, 0.34);
+      --green: #22c55e;
+      --green-soft: rgba(34, 197, 94, 0.22);
+      --red: #ef4444;
+      --red-soft: rgba(239, 68, 68, 0.22);
+      --line: rgba(255, 255, 255, 0.1);
+      --shadow: 0 18px 60px rgba(0, 0, 0, 0.45);
+      --blur: blur(18px);
+      --radius-xl: 28px;
+      --radius-lg: 20px;
+      --radius-md: 14px;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(139, 92, 246, 0.28), transparent 28%),
+        radial-gradient(circle at top right, rgba(34, 197, 94, 0.16), transparent 26%),
+        radial-gradient(circle at bottom center, rgba(239, 68, 68, 0.12), transparent 30%),
+        linear-gradient(180deg, #050507 0%, #09090d 40%, #040406 100%);
+      color: var(--text);
+    }
+
+    body::before,
+    body::after {
+      content: "";
+      position: fixed;
+      inset: auto;
+      pointer-events: none;
+      z-index: 0;
+      border-radius: 999px;
+      filter: blur(60px);
+      opacity: 0.75;
+    }
+
+    body::before {
+      width: 280px;
+      height: 280px;
+      top: 80px;
+      left: -40px;
+      background: rgba(139, 92, 246, 0.24);
+    }
+
+    body::after {
+      width: 260px;
+      height: 260px;
+      right: -40px;
+      bottom: 120px;
+      background: rgba(34, 197, 94, 0.14);
+    }
+
+    .page {
+      position: relative;
+      z-index: 1;
+      width: min(1160px, calc(100% - 28px));
+      margin: 30px auto;
+      padding: 30px;
+      border: 1px solid var(--line);
+      border-radius: 34px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02));
+      backdrop-filter: var(--blur);
+      -webkit-backdrop-filter: var(--blur);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .page::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        linear-gradient(120deg, rgba(139, 92, 246, 0.08), transparent 28%),
+        linear-gradient(300deg, rgba(34, 197, 94, 0.06), transparent 22%);
+      pointer-events: none;
+    }
+
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 18px;
+      margin-bottom: 24px;
+      flex-wrap: wrap;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .brand-mark {
+      width: 56px;
+      height: 56px;
+      border-radius: 18px;
+      overflow: hidden;
+      border: 1px solid rgba(255,255,255,0.08);
+      box-shadow:
+        0 0 0 1px rgba(255,255,255,0.04) inset,
+        0 0 24px rgba(139, 92, 246, 0.22);
+      flex: 0 0 54px;
+      background: rgba(255,255,255,0.03);
+    }
+
+    .brand-mark img {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border-radius: 12px;
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-size: clamp(1.8rem, 3vw, 2.8rem);
+      letter-spacing: 0.02em;
+    }
+
+    .brand p {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 0.98rem;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      border-radius: 999px;
+      color: #dcfce7;
+      border: 1px solid rgba(34, 197, 94, 0.28);
+      background: rgba(34, 197, 94, 0.12);
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.03);
+    }
+
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 12px rgba(34, 197, 94, 0.85);
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: 1.15fr 0.85fr;
+      gap: 22px;
+      margin-bottom: 22px;
+    }
+
+    .glass-card {
+      position: relative;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-xl);
+      background: linear-gradient(180deg, var(--panel), rgba(10, 10, 16, 0.76));
+      backdrop-filter: var(--blur);
+      -webkit-backdrop-filter: var(--blur);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .glass-card::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(180deg, rgba(255,255,255,0.05), transparent 35%);
+      pointer-events: none;
+    }
+
+    .hero-copy,
+    .hero-side,
+    .installer,
+
+    .screenshots {
+      margin-top: 22px;
+    }
+
+    .shot-grid {
+      display: grid;
+      padding-left: 4px;
+      padding-right: 4px;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 14px;
+      margin-top: 16px;
+    }
+
+    .shot {
+      text-decoration: none;
+      color: var(--text);
+      border-radius: 18px;
+      overflow: hidden;
+      border: 1px solid rgba(255,255,255,0.08);
+      background: rgba(255,255,255,0.03);
+      transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+    }
+
+    .shot:hover {
+      transform: translateY(-3px);
+      border-color: rgba(134,239,172,0.35);
+      box-shadow: 0 12px 36px rgba(0,0,0,0.28), 0 0 24px rgba(168,85,247,0.12);
+    }
+
+    .shot img {
+      display: block;
+      width: 100%;
+      aspect-ratio: 4 / 3;
+      object-fit: cover;
+      background: #08080d;
+    }
+
+    .shot span {
+      display: block;
+      padding: 14px 16px;
+      font-weight: 700;
+      font-size: 0.92rem;
+      letter-spacing: 0.02em;
+    }
+
+    .footer {
+      padding: 24px;
+    }
+
+	.eyebrow {
+	  display: inline-flex;
+	  align-items: center;
+	  gap: 12px;
+	  padding: 10px 18px;
+	  margin-top: 8px;
+	  margin-bottom: 14px;
+	  margin-left: 14px; /* move it right */
+	  border-radius: 999px;
+	  font-size: 0.84rem;
+	  letter-spacing: 0.08em;
+	  text-transform: uppercase;
+	  color: #efe9ff;
+	  background: rgba(139, 92, 246, 0.14);
+	  border: 1px solid rgba(139, 92, 246, 0.22);
+	}
+
+    .hero-copy h2 {
+      margin: 0 0 12px;
+	  margin-left: 4px;
+      font-size: clamp(2rem, 4vw, 3.5rem);
+      line-height: 1.02;
+    }
+
+    .hero-copy p {
+      margin: 0;
+	  margin-left: 4px;
+      color: var(--muted);
+      font-size: 1.04rem;
+      max-width: 60ch;
+    }
+
+    .accent-row {
+      display: flex;
+      padding-left: 4px;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 18px;
+	  margin-bottom: 4px;
+	  margin-left: 4px;
+    }
+
+    .chip {
+      padding: 10px 16px;
+      border-radius: 999px;
+      font-size: 0.92rem;
+      border: 1px solid rgba(255,255,255,0.09);
+      background: rgba(255,255,255,0.04);
+      color: var(--text);
+    }
+
+    .chip.green { box-shadow: inset 0 0 0 1px rgba(34,197,94,0.08); }
+    .chip.violet { box-shadow: inset 0 0 0 1px rgba(139,92,246,0.12); }
+    .chip.red { box-shadow: inset 0 0 0 1px rgba(239,68,68,0.1); }
+
+    .hero-side {
+      display: grid;
+      gap: 16px;
+      align-content: center;
+    }
+
+    .metric {
+      padding: 16px 18px;
+      border-radius: 18px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.07);
+    }
+
+    .metric label {
+      display: block;
+      font-size: 0.82rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+
+    .metric strong {
+      font-size: 1.1rem;
+      font-weight: 700;
+    }
+
+    .metric.violet { box-shadow: inset 0 0 0 1px rgba(139,92,246,0.08), 0 0 18px rgba(139,92,246,0.08); }
+    .metric.green { box-shadow: inset 0 0 0 1px rgba(34,197,94,0.08), 0 0 18px rgba(34,197,94,0.08); }
+    .metric.red { box-shadow: inset 0 0 0 1px rgba(239,68,68,0.08), 0 0 18px rgba(239,68,68,0.08); }
+
+    .installer {
+      margin-top: 4px;
+    }
+
+    .section-title {
+      display: flex;
+      padding-left: 12px;
+      padding-right: 12px;
+      justify-content: space-between;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 18px;
+      flex-wrap: wrap;
+    }
+
+    .section-title h3 {
+      margin: 0;
+      padding-left: 4px;
+      font-size: 1.35rem;
+    }
+
+    .section-title span {
+      color: var(--muted);
+      font-size: 0.96rem;
+    }
+
+    .installer-grid {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 18px;
+      align-items: end;
+    }
+
+    .field-group label {
+      display: block;
+      margin-bottom: 10px;
+	  margin-left: 8px;
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+
+    select {
+      width: 66%;
+	  margin-left: 4px;
+      appearance: none;
+      padding: 16px 18px;
+      border-radius: 18px;
+      border: 1px solid rgba(139, 92, 246, 0.28);
+      background:
+        linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.03)),
+        rgba(12, 12, 18, 0.88);
+      color: var(--text);
+      font-size: 1rem;
+      outline: none;
+      box-shadow:
+        inset 0 0 0 1px rgba(255,255,255,0.03),
+        0 0 0 rgba(0,0,0,0);
+      transition: border-color .2s ease, box-shadow .2s ease, transform .2s ease;
+    }
+
+    select:focus {
+      border-color: rgba(34, 197, 94, 0.6);
+      box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.14), 0 0 22px rgba(139, 92, 246, 0.16);
+      transform: translateY(-1px);
+    }
+
+    .button-wrap {
+      min-width: 240px;
+      display: flex;
+      justify-content: flex-end;
+	  margin-right: 16px;
+	  margin-bottom: 14px;
+    }
+
+    esp-web-install-button {
+      --esp-tools-button-color: #000;
+      --esp-tools-button-background: linear-gradient(135deg, #8b5cf6, #22c55e);
+      --esp-tools-button-border-radius: 18px;
+      --esp-tools-button-padding: 16px 22px;
+      --esp-tools-button-font-size: 1rem;
+      filter: drop-shadow(0 0 18px rgba(139, 92, 246, 0.25));
+    }
+
+    .invisible {
+      visibility: hidden;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .note-row {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 14px;
+      margin-top: 18px;
+    }
+
+    .note {
+      border-radius: 18px;
+      padding: 16px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.06);
+    }
+
+    .note strong {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 0.96rem;
+    }
+
+    .note p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.92rem;
+      line-height: 1.45;
+    }
+
+    .footer {
+      margin-top: 22px;
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: center;
+      flex-wrap: wrap;
+      border-top: 1px solid rgba(255,255,255,0.08);
+    }
+
+    .footer p {
+      margin: 0;
+      color: var(--muted);
+    }
+
+    .footer a {
+      color: #d8b4fe;
+      text-decoration: none;
+    }
+
+    .footer a:hover {
+      color: #86efac;
+    }
+
+    .counter {
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08);
+      color: var(--text);
+      min-width: 130px;
+      text-align: center;
+    }
+
+    @media (max-width: 860px) {
+      .hero,
+      .installer-grid,
+      .note-row {
+        grid-template-columns: 1fr;
+      }
+
+      .button-wrap {
+        min-width: unset;
+        justify-content: stretch;
+      }
+
+      .button-wrap esp-web-install-button {
+        width: 100%;
+      }
+
+      .page {
+        width: min(calc(100% - 14px), 1160px);
+        padding: 18px;
+        margin: 10px auto 18px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <div class="topbar">
+      <div class="brand">
+        <div class="brand-mark"><img src="Images\icon.png" alt="Deauth Sleuth icon"></div>
+        <div>
+          <h1>Deauth Sleuth</h1>
+          <p>Touchscreen ESP32 Wi-Fi monitoring firmware by ATOMNFT.</p>
+        </div>
+      </div>
+      <div class="status-pill">
+        <span class="status-dot"></span>
+        V1: Fully Functional
+      </div>
+    </div>
+
+    <section class="hero">
+      <div class="glass-card hero-copy">
+        <div class="eyebrow">ESP32 Wi-Fi monitor</div>
+        <h2>Monitor deauth activity with a sharper UI.</h2>
+        <p>
+          Deauth Sleuth is a touchscreen ESP32 Wi-Fi monitoring project for the ESP32-2432S028R.
+          It watches nearby 802.11 traffic in promiscuous mode, highlights deauthentication and
+          disassociation activity, and presents live status with touch controls, alert visuals,
+          SD logging, and RGB LED feedback in a cleaner futuristic layout.
+        </p>
+        <div class="accent-row">
+          <div class="chip violet">Deauth / disassoc detection</div>
+          <div class="chip green">Auto + manual scan modes</div>
+          <div class="chip red">Touch UI + SD CSV logging</div>
+        </div>
+      </div>
+
+      <div class="glass-card hero-side">
+        <div class="metric violet">
+          <label>Target board</label>
+          <strong>ESP32 CHEAP YELLOW DISPLAY</strong>
+        </div>
+        <div class="metric green">
+          <label>Framework</label>
+          <strong>Arduino + TFT_eSPI</strong>
+        </div>
+        <div class="metric red">
+          <label>Core features</label>
+          <strong>Touch UI, RGB status, SD logs</strong>
+        </div>
+      </div>
+    </section>
+
+    <section class="glass-card installer">
+      <div class="section-title">
+        <h3>Deauth Sleuth firmware</h3>
+        <span>Install directly from the real Deauth Sleuth github repo for CYD and CYD2USB builds.</span>
+      </div>
+
+      <div class="installer-grid">
+        <div class="field-group">
+          <label for="device-select">Firmware package</label>
+          <select id="device-select">
+            <option value="" selected disabled>Choose Deauth Sleuth build</option>
+            <option value="CYD">Deauth Sleuth-CYD • ESP32-2432S028R</option>
+            <option value="CYD2USB">Deauth Sleuth-CYD2USB • ESP32-2432S028R + USB variant</option>
+          </select>
+        </div>
+
+        <div class="button-wrap">
+          <esp-web-install-button id="installBtn" class="invisible"></esp-web-install-button>
+        </div>
+      </div>
+
+      <div class="note-row">
+        <div class="note">
+          <strong>USB setup</strong>
+          <p>Use a data-capable USB cable and close Arduino IDE, serial monitors, or any app already holding the COM port before using the web flasher.</p>
+        </div>
+        <div class="note">
+          <strong>Browser support</strong>
+          <p>For web flashing, use a current Chromium-based browser such as <strong>Chrome</strong> or <strong>Brave</strong>. Other browsers may not support the required Web Serial features.</p>
+        </div>
+      </div>
+    </section>
+
+
+    <section class="glass-card screenshots">
+      <div class="section-title">
+        <h3>Project screens</h3>
+      </div>
+
+      <div class="shot-grid">
+        <a class="shot" href="https://raw.githubusercontent.com/ATOMNFT/Deauth-Sleuth/main/Images/ui-overview.jpg" target="_blank" rel="noopener noreferrer">
+          <img src="https://raw.githubusercontent.com/ATOMNFT/Deauth-Sleuth/main/Images/ui-overview.jpg" alt="Deauth Sleuth UI overview">
+          <span>UI Overview</span>
+        </a>
+        <a class="shot" href="https://raw.githubusercontent.com/ATOMNFT/Deauth-Sleuth/main/Images/auto.jpg" target="_blank" rel="noopener noreferrer">
+          <img src="https://raw.githubusercontent.com/ATOMNFT/Deauth-Sleuth/main/Images/auto.jpg" alt="Deauth Sleuth auto scan screen">
+          <span>Auto Mode</span>
+        </a>
+        <a class="shot" href="https://raw.githubusercontent.com/ATOMNFT/Deauth-Sleuth/main/Images/manu.jpg" target="_blank" rel="noopener noreferrer">
+          <img src="https://raw.githubusercontent.com/ATOMNFT/Deauth-Sleuth/main/Images/manu.jpg" alt="Deauth Sleuth manual scan screen">
+          <span>Manual Mode</span>
+        </a>
+        <a class="shot" href="https://raw.githubusercontent.com/ATOMNFT/Deauth-Sleuth/main/Images/led.jpg" target="_blank" rel="noopener noreferrer">
+          <img src="https://raw.githubusercontent.com/ATOMNFT/Deauth-Sleuth/main/Images/led.jpg" alt="Deauth Sleuth RGB LED status">
+          <span>LED Status</span>
+        </a>
+        <a class="shot" href="https://raw.githubusercontent.com/ATOMNFT/Deauth-Sleuth/main/Images/boot.png" target="_blank" rel="noopener noreferrer">
+          <img src="https://raw.githubusercontent.com/ATOMNFT/Deauth-Sleuth/main/Images/boot.png" alt="Deauth Sleuth boot screen">
+          <span>Boot Screen</span>
+        </a>
+      </div>
+    </section>
+
+
+    <footer class="glass-card footer">
+      <p>
+        Made with ❤️ &amp; ☕ by <a href="https://github.com/ATOMNFT" target="_blank" rel="noopener noreferrer">ATOMNFT</a>
+      </p>
+      <div id="visitor-counter" class="counter">Visits: 1</div>
+    </footer>
+  </main>
+
+  <script>
+    const select = document.getElementById('device-select');
+    const installBtn = document.getElementById('installBtn');
+    const visitorCounter = document.getElementById('visitor-counter');
+
+    const manifests = {
+      cyd: 'https://raw.githubusercontent.com/ATOMNFT/Deauth-Sleuth/main/web/manifest_Deauth_Sleuth-CYD.json',
+      cyd2usb: 'https://raw.githubusercontent.com/ATOMNFT/Deauth-Sleuth/main/web/manifest_Deauth_Sleuth-CYD2USB.json'
+    };
+
+    select.addEventListener('change', (event) => {
+      const value = event.target.value;
+      if (!manifests[value]) {
+        installBtn.classList.add('invisible');
+        installBtn.manifest = '';
+        return;
+      }
+      installBtn.manifest = manifests[value];
+      installBtn.classList.remove('invisible');
+    });
+
+    window.addEventListener('DOMContentLoaded', () => {
+      const key = 'atomnft_flasher_views';
+      const current = Number(localStorage.getItem(key) || '0') + 1;
+      localStorage.setItem(key, String(current));
+      visitorCounter.textContent = `Visits: ${current}`;
+    });
+  </script>
+</body>
+</html>
