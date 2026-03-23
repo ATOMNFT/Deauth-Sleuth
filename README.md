@@ -94,5 +94,5 @@ Once the board and port are selected, compile and upload normally.
 
 To flash with the online tool, just visit the link below.
 <a href="https://atomnft.github.io/Deauth-Sleuth/flash0.html" target="_blank" rel="noopener noreferrer">
-  <img src="Images/flash-button.png" alt="Flash Now" width="520" height="140">
+  <img src="Images/flash-button.png" alt="Flash Now" width="420" height="140">
 </a>
