@@ -1,26 +1,34 @@
 /*
   ============================================================
-  Deauth Sleuth v1
+  Deauth Sleuth v1.1
   Board: ESP32-2432S028R
   Framework: Arduino / ESP32 core 2.0.10
   Display: 320x240 TFT using TFT_eSPI
   Touch: TFT_eSPI getTouch()
   Created by ATOMNFT
-  Deauth Sleuth is a touchscreen ESP32-based Wi-Fi monitoring
-  tool built for the ESP32-2432S028R. It scans nearby wireless
+
+  Deauth Sleuth is a touchscreen ESP32 Wi-Fi monitoring tool
+  built for the ESP32-2432S028R. It scans nearby wireless
   traffic, watches for deauthentication and disassociation
-  activity, and presents live scanner status on the TFT using
-  custom graphics, alert visuals, and touch-driven controls.
+  activity, monitors for possible Evil Twin behavior, and
+  presents live status through custom graphics, alerts, touch
+  controls, RGB LED feedback, and optional SD logging.
 
   Features include:
   - Auto Scan and Manual Scan modes
-  - Touch toggle for scan state
-  - Manual channel selection from the CH when in manu mode
-  - Adjustable channel hop presets in Auto Scan mode
-  - Splash screen and custom packet/status graphics
+  - Touch control for scan mode, channel, hop speed, and SD logging
+  - Manual channel selection from the CH area
+  - Adjustable channel-hop presets in Auto Scan mode
+  - Splash screen and custom packet/status artwork
+  - Live packet graph and session statistics
   - SD card status icons with on-screen logging toggle
-  - CSV event logging for detected deauth/disassoc frames
-  - RGB LED status feedback for scan, alerts, and SD writes
+  - Expanded CSV logging for deauth/disassoc events
+  - Passive Evil Twin monitoring for duplicate SSID anomalies
+  - Separate Evil Twin CSV logging with risk details
+  - Evil Twin alert and capture artwork
+  - RGB LED feedback for scanning, alerts, and SD writes
+  - User-adjustable settings stored in config.h
+  - Low, Balanced, and High alert sensitivity profiles
 
   This project is intended as a compact ESP32 wireless activity
   viewer with a simple touch interface, live feedback, and
@@ -36,6 +44,7 @@
 #include <SPI.h>
 #include <SD.h>
 #include <TFT_eSPI.h>
+#include "config.h"
 
 // ============================================================
 // Sprites
@@ -43,6 +52,8 @@
 #include "norm-packets.h"
 #include "deauth-packets.h"
 #include "packet-capture.h"
+#include "evil-packets.h"
+#include "evil-capture.h"
 #include "sd-no.h"
 #include "sd-off.h"
 #include "sd-on.h"
@@ -50,24 +61,14 @@
 
 TFT_eSPI tft = TFT_eSPI();
 
-// Forward declaration for Arduino auto-generated prototypes
+// Forward declarations for Arduino auto-generated prototypes
 struct LogEvent;
+struct ApObservation;
+struct ApRecord;
+struct EvilTwinLogEvent;
 
 
-const unsigned long SPLASH_TIME_MS = 2800;
 
-// ============================================================
-// RGB LED pins / control
-// ============================================================
-#define B_PIN 17
-#define G_PIN 16
-#define R_PIN 4
-
-// Set to 1 if your RGB LED is common-anode / inverted
-#define RGB_INVERTED 1
-
-const unsigned long LED_ALERT_HOLD_MS = 650;
-const unsigned long LED_SD_FLASH_MS   = 140;
 
 enum LedMode {
   LED_MODE_SCAN,
@@ -118,23 +119,11 @@ void updateLedState() {
 
 
 
-// ============================================================
-// Sprite brightness controls
-// ============================================================
-const float PACKET_SPRITE_BRIGHTNESS = 1.20f;
-const float SD_SPRITE_BRIGHTNESS     = 1.15f;
 
 // Scratch buffers used for brightness-adjusted RGB565 drawing
-uint16_t packetSpriteBuffer[96 * 96];
-uint16_t sdSpriteBuffer[24 * 24];
+uint16_t packetSpriteBuffer[PACKET_SPRITE_BUFFER_W * PACKET_SPRITE_BUFFER_H];
+uint16_t sdSpriteBuffer[SD_SPRITE_BUFFER_W * SD_SPRITE_BUFFER_H];
 
-// ============================================================
-// SD card pin config
-// ============================================================
-static const int SD_CS_PIN   = 5;
-static const int SD_SCK_PIN  = 18;
-static const int SD_MISO_PIN = 19;
-static const int SD_MOSI_PIN = 23;
 
 SPIClass sdSPI(VSPI);
 
@@ -143,94 +132,7 @@ bool sdLoggingEnabled = false;
 bool lastDrawnSdLoggingEnabled = false;
 bool lastDrawnSdCardReady = false;
 
-const char* LOG_FILE_PATH = "/deauth_log.csv";
 
-// ============================================================
-// Screen / layout
-// ============================================================
-static const int SCREEN_W = 320;
-static const int SCREEN_H = 240;
-static const int HEADER_H = 24;
-
-// Header SD icon position
-static const int SD_ICON_X = 200;
-static const int SD_ICON_Y = 0;
-
-// Dedicated sprite section
-static const int SPRITE_PANEL_X = 8;
-static const int SPRITE_PANEL_Y = 32;
-static const int SPRITE_PANEL_W = 112;
-static const int SPRITE_PANEL_H = 112;
-
-static const int SPRITE_X = 16;
-static const int SPRITE_Y = 40;
-
-// Small panel below sprite
-static const int SPRITE_INFO_X = 8;
-static const int SPRITE_INFO_Y = 150;
-static const int SPRITE_INFO_W = 112;
-static const int SPRITE_INFO_H = 40;
-
-// Right-side graph
-static const int GRAPH_X = 128;
-static const int GRAPH_Y = 32;
-static const int GRAPH_W = 184;
-static const int GRAPH_H = 102;
-
-// Right-side stats
-static const int STATS_X = 128;
-static const int STATS_Y = 140;
-static const int STATS_W = 184;
-static const int STATS_H = 50;
-
-// Bottom touch button
-static const int TOUCH_SD_X = 8;
-static const int TOUCH_SD_Y = 198;
-static const int TOUCH_SD_W = 304;
-static const int TOUCH_SD_H = 34;
-
-// Plot area
-static const int GRAPH_POINTS = 64;
-static const int GRAPH_PLOT_X = GRAPH_X + 4;
-static const int GRAPH_PLOT_Y = GRAPH_Y + 20;
-static const int GRAPH_PLOT_W = GRAPH_W - 8;
-static const int GRAPH_PLOT_H = GRAPH_H - 24;
-
-// ============================================================
-// Touch zones
-// ============================================================
-static const int TOUCH_MODE_X = SPRITE_INFO_X;
-static const int TOUCH_MODE_Y = SPRITE_INFO_Y;
-static const int TOUCH_MODE_W = SPRITE_INFO_W;
-static const int TOUCH_MODE_H = SPRITE_INFO_H;
-
-static const int TOUCH_CH_X = 0;
-static const int TOUCH_CH_Y = 0;
-static const int TOUCH_CH_W = 68;
-static const int TOUCH_CH_H = HEADER_H;
-
-static const int TOUCH_HOP_X = 52;
-static const int TOUCH_HOP_Y = 0;
-static const int TOUCH_HOP_W = 104;
-static const int TOUCH_HOP_H = HEADER_H;
-
-// ============================================================
-// Colors
-// ============================================================
-#define COL_BG         TFT_BLACK
-#define COL_PANEL      0x10A2
-#define COL_PANEL2     0x18E3
-#define COL_BORDER     TFT_VIOLET
-#define COL_TEXT       TFT_WHITE
-#define COL_DIM        0xBDF7
-#define COL_ACCENT     TFT_GREEN
-#define COL_ALERT      TFT_RED
-#define COL_LOG        TFT_CYAN
-#define COL_GRAPH_BG   0x0841
-#define COL_GRID       0x2104
-#define COL_BTN_ON     0x0400
-#define COL_BTN_OFF    0x4000
-#define COL_WARN       0xFD20
 
 // ============================================================
 // Visual states
@@ -238,13 +140,15 @@ static const int TOUCH_HOP_H = HEADER_H;
 enum ScannerVisualState {
   STATE_SCANNING,
   STATE_DEAUTH_SEEN,
-  STATE_SD_LOGGING
+  STATE_SD_LOGGING,
+  STATE_EVIL_TWIN_SEEN,
+  STATE_EVIL_TWIN_SD_LOGGING
 };
 
 ScannerVisualState currentState = STATE_SCANNING;
 ScannerVisualState lastDrawnState = (ScannerVisualState)255;
 unsigned long stateUntilMs = 0;
-unsigned long sdFlashDurationMs = 350;
+unsigned long sdFlashDurationMs = SD_FLASH_DURATION_MS;
 
 // ============================================================
 // Scan mode / hopping
@@ -257,16 +161,12 @@ enum ScanMode {
 ScanMode scanMode = MODE_AUTO_SCAN;
 ScanMode lastDrawnScanMode = (ScanMode)255;
 
-uint8_t currentChannel = 1;
+uint8_t currentChannel = DEFAULT_CHANNEL;
 uint8_t lastDrawnChannel = 255;
-const uint8_t minChannel = 1;
-const uint8_t maxChannel = 13;
 unsigned long lastHopMs = 0;
 
-const unsigned long hopPresets[] = {100, 150, 250, 400, 500, 750, 1000, 1500, 2000};
-const uint8_t hopPresetCount = sizeof(hopPresets) / sizeof(hopPresets[0]);
-uint8_t hopPresetIndex = 5;
-unsigned long hopIntervalMs = hopPresets[hopPresetIndex];
+uint8_t hopPresetIndex = DEFAULT_HOP_PRESET_INDEX;
+unsigned long hopIntervalMs = HOP_PRESETS[hopPresetIndex];
 unsigned long lastDrawnHopInterval = 0xFFFFFFFF;
 
 // ============================================================
@@ -277,6 +177,11 @@ volatile uint32_t deauthPackets = 0;
 volatile uint16_t packetsThisSample = 0;
 volatile uint8_t pendingDeauthEvents = 0;
 
+// Deauth/disassoc CSV logging still records every detected frame.
+// These values only control when the visual and RGB alert fires.
+unsigned long deauthBurstWindowStartMs = 0;
+uint16_t deauthBurstEventCount = 0;
+
 uint32_t totalPacketsUi = 0;
 uint32_t deauthPacketsUi = 0;
 uint16_t lastActivityBurst = 0;
@@ -284,6 +189,107 @@ uint16_t lastActivityBurst = 0;
 uint32_t lastDrawnTotalPackets = 0xFFFFFFFF;
 uint32_t lastDrawnDeauthPackets = 0xFFFFFFFF;
 uint16_t lastDrawnBurst = 0xFFFF;
+
+// ============================================================
+// Passive Evil Twin detector
+// ============================================================
+// The callback only queues compact beacon/probe-response observations.
+// SSID comparison, table maintenance, and risk scoring happen in loop().
+enum EvilTwinState {
+  TWIN_LEARNING,
+  TWIN_CLEAR,
+  TWIN_SUSPICIOUS,
+  TWIN_HIGH_RISK
+};
+
+enum ApSecurity {
+  AP_SEC_OPEN,
+  AP_SEC_WEP,
+  AP_SEC_WPA,
+  AP_SEC_WPA2,
+  AP_SEC_WPA3
+};
+
+struct ApObservation {
+  char ssid[33];
+  uint8_t ssidLength;
+  uint8_t bssid[6];
+  uint8_t channel;
+  int8_t rssi;
+  uint8_t security;
+  uint32_t seenMs;
+};
+
+struct ApRecord {
+  bool used;
+  char ssid[33];
+  uint8_t ssidLength;
+  uint8_t bssid[6];
+  uint8_t channel;
+  int8_t rssi;
+  uint8_t security;
+  uint32_t firstSeenMs;
+  uint32_t lastSeenMs;
+  uint16_t seenCount;
+};
+
+volatile ApObservation apObservationQueue[AP_OBSERVATION_QUEUE_SIZE];
+volatile uint8_t apObservationHead = 0;
+volatile uint8_t apObservationTail = 0;
+volatile uint32_t droppedApObservations = 0;
+
+ApRecord apTable[AP_TABLE_SIZE];
+
+
+// When the detector is clear, briefly show its status before returning
+// the panel to the normal Auto Scan / Manual Scan display.
+
+unsigned long evilTwinLearningStartMs = 0;
+EvilTwinState evilTwinState = TWIN_LEARNING;
+EvilTwinState lastDrawnEvilTwinState = (EvilTwinState)255;
+uint8_t evilTwinRiskScore = 0;
+
+unsigned long lastTwinClearDisplayMs = 0;
+bool showingTwinClearStatus = false;
+bool lastDrawnShowingTwinStatus = false;
+
+// Risk reasons are stored as a bit mask so the CSV can explain why
+// a duplicate SSID was considered suspicious.
+enum EvilTwinReasonFlags {
+  TWIN_REASON_SECURITY_MISMATCH = 0x01,
+  TWIN_REASON_DIFFERENT_OUI     = 0x02,
+  TWIN_REASON_DIFFERENT_CHANNEL = 0x04,
+  TWIN_REASON_RSSI_DIFFERENCE   = 0x08,
+  TWIN_REASON_NEW_AFTER_LEARN   = 0x10,
+  TWIN_REASON_MULTI_BSSID       = 0x20
+};
+
+struct EvilTwinLogEvent {
+  uint32_t ms;
+  char ssid[33];
+  uint8_t riskScore;
+  uint8_t reasonFlags;
+  uint8_t knownBssid[6];
+  uint8_t suspectBssid[6];
+  uint8_t knownChannel;
+  uint8_t suspectChannel;
+  int8_t knownRssi;
+  int8_t suspectRssi;
+  uint8_t knownSecurity;
+  uint8_t suspectSecurity;
+};
+
+EvilTwinLogEvent evilTwinLogQueue[EVIL_TWIN_LOG_QUEUE_SIZE];
+uint8_t evilTwinLogHead = 0;
+uint8_t evilTwinLogTail = 0;
+uint32_t droppedEvilTwinLogEvents = 0;
+uint32_t loggedEvilTwinEventsCount = 0;
+
+// Prevent the same persistent pair from being logged every loop.
+uint8_t lastLoggedTwinBssidA[6] = {0};
+uint8_t lastLoggedTwinBssidB[6] = {0};
+uint8_t lastLoggedTwinRiskScore = 0;
+unsigned long lastEvilTwinLogMs = 0;
 
 // ============================================================
 // SD event queue
@@ -300,7 +306,6 @@ struct LogEvent {
   uint8_t bssid[6];
 };
 
-static const uint8_t LOG_QUEUE_SIZE = 32;
 volatile LogEvent logQueue[LOG_QUEUE_SIZE];
 volatile uint8_t logHead = 0;
 volatile uint8_t logTail = 0;
@@ -410,14 +415,547 @@ void applyCurrentChannel() {
 
 void cycleHopPreset() {
   hopPresetIndex++;
-  if (hopPresetIndex >= hopPresetCount) hopPresetIndex = 0;
-  hopIntervalMs = hopPresets[hopPresetIndex];
+  if (hopPresetIndex >= HOP_PRESET_COUNT) hopPresetIndex = 0;
+  hopIntervalMs = HOP_PRESETS[hopPresetIndex];
 }
 
 void stepManualChannel() {
   currentChannel++;
-  if (currentChannel > maxChannel) currentChannel = minChannel;
+  if (currentChannel > MAX_CHANNEL) currentChannel = MIN_CHANNEL;
   applyCurrentChannel();
+}
+
+const char* evilTwinLabel() {
+  switch (evilTwinState) {
+    case TWIN_LEARNING:   return "Learning";
+    case TWIN_CLEAR:      return "Clear";
+    case TWIN_SUSPICIOUS: return "Sus";
+    case TWIN_HIGH_RISK:  return "HIGH";
+  }
+  return "?";
+}
+
+uint16_t evilTwinStatusColor() {
+  switch (evilTwinState) {
+    case TWIN_LEARNING:   return COL_LOG;
+    case TWIN_CLEAR:      return COL_ACCENT;
+    case TWIN_SUSPICIOUS: return COL_WARN;
+    case TWIN_HIGH_RISK:  return COL_ALERT;
+  }
+  return COL_TEXT;
+}
+
+bool shouldShowTwinStatus() {
+  unsigned long now = millis();
+
+  // Keep learning and active warnings visible continuously.
+  if (evilTwinState == TWIN_LEARNING ||
+      evilTwinState == TWIN_SUSPICIOUS ||
+      evilTwinState == TWIN_HIGH_RISK) {
+    showingTwinClearStatus = false;
+    return true;
+  }
+
+  // When clear, show a short heartbeat at the selected interval.
+  if (!showingTwinClearStatus &&
+      now - lastTwinClearDisplayMs >= TWIN_CLEAR_SHOW_INTERVAL_MS) {
+    showingTwinClearStatus = true;
+    lastTwinClearDisplayMs = now;
+  }
+
+  if (showingTwinClearStatus) {
+    if (now - lastTwinClearDisplayMs < TWIN_CLEAR_SHOW_TIME_MS) {
+      return true;
+    }
+
+    showingTwinClearStatus = false;
+  }
+
+  return false;
+}
+
+bool macEquals(const uint8_t* a, const uint8_t* b) {
+  for (uint8_t i = 0; i < 6; i++) {
+    if (a[i] != b[i]) return false;
+  }
+  return true;
+}
+
+bool ouiEquals(const uint8_t* a, const uint8_t* b) {
+  return a[0] == b[0] && a[1] == b[1] && a[2] == b[2];
+}
+
+bool ssidEquals(const char* a, uint8_t aLen, const char* b, uint8_t bLen) {
+  if (aLen != bLen) return false;
+  for (uint8_t i = 0; i < aLen; i++) {
+    if (a[i] != b[i]) return false;
+  }
+  return true;
+}
+
+uint8_t parseApSecurity(const uint8_t* payload, uint16_t packetLength, uint16_t ieStart) {
+  if (packetLength < 36) return AP_SEC_OPEN;
+
+  uint16_t capability = (uint16_t)payload[34] | ((uint16_t)payload[35] << 8);
+  bool privacy = (capability & 0x0010) != 0;
+  bool hasWpa = false;
+  bool hasRsn = false;
+  bool hasWpa3Akm = false;
+
+  uint16_t pos = ieStart;
+  while (pos + 2 <= packetLength) {
+    uint8_t id = payload[pos];
+    uint8_t len = payload[pos + 1];
+    uint16_t next = pos + 2 + len;
+    if (next > packetLength) break;
+
+    if (id == 48) {
+      hasRsn = true;
+
+      // Look for WPA3 SAE / FT-SAE AKM suite types inside the RSN IE.
+      for (uint16_t i = pos + 2; i + 3 < next; i++) {
+        if (payload[i] == 0x00 &&
+            payload[i + 1] == 0x0F &&
+            payload[i + 2] == 0xAC &&
+            (payload[i + 3] == 0x08 || payload[i + 3] == 0x09)) {
+          hasWpa3Akm = true;
+          break;
+        }
+      }
+    } else if (id == 221 && len >= 4) {
+      if (payload[pos + 2] == 0x00 &&
+          payload[pos + 3] == 0x50 &&
+          payload[pos + 4] == 0xF2 &&
+          payload[pos + 5] == 0x01) {
+        hasWpa = true;
+      }
+    }
+
+    pos = next;
+  }
+
+  if (hasWpa3Akm) return AP_SEC_WPA3;
+  if (hasRsn) return AP_SEC_WPA2;
+  if (hasWpa) return AP_SEC_WPA;
+  if (privacy) return AP_SEC_WEP;
+  return AP_SEC_OPEN;
+}
+
+bool extractApObservation(const wifi_promiscuous_pkt_t* ppkt, ApObservation &obs) {
+  const uint8_t* payload = ppkt->payload;
+  uint16_t packetLength = ppkt->rx_ctrl.sig_len;
+
+  // Beacon and probe-response frames both have a 24-byte management
+  // header followed by 12 bytes of fixed parameters.
+  if (packetLength < 38) return false;
+
+  uint8_t frameControl0 = payload[0];
+  if (frameControl0 != 0x80 && frameControl0 != 0x50) return false;
+
+  const uint16_t ieStart = 36;
+  uint16_t pos = ieStart;
+  bool foundSsid = false;
+  uint8_t advertisedChannel = 0;
+
+  obs.ssidLength = 0;
+  obs.ssid[0] = '\0';
+
+  while (pos + 2 <= packetLength) {
+    uint8_t id = payload[pos];
+    uint8_t len = payload[pos + 1];
+    uint16_t next = pos + 2 + len;
+    if (next > packetLength) break;
+
+    if (id == 0 && !foundSsid) {
+      // Ignore hidden/blank SSIDs for duplicate-name detection.
+      if (len == 0) return false;
+
+      obs.ssidLength = (len > 32) ? 32 : len;
+      for (uint8_t i = 0; i < obs.ssidLength; i++) {
+        char c = (char)payload[pos + 2 + i];
+        obs.ssid[i] = (c >= 32 && c <= 126) ? c : '?';
+      }
+      obs.ssid[obs.ssidLength] = '\0';
+      foundSsid = true;
+    } else if (id == 3 && len >= 1) {
+      advertisedChannel = payload[pos + 2];
+    }
+
+    pos = next;
+  }
+
+  if (!foundSsid) return false;
+
+  for (uint8_t i = 0; i < 6; i++) {
+    obs.bssid[i] = payload[16 + i];
+  }
+
+  obs.channel = advertisedChannel;
+  if (obs.channel < MIN_CHANNEL || obs.channel > MAX_CHANNEL) {
+    obs.channel = currentChannel;
+  }
+
+  obs.rssi = ppkt->rx_ctrl.rssi;
+  obs.security = parseApSecurity(payload, packetLength, ieStart);
+  obs.seenMs = millis();
+  return true;
+}
+
+bool enqueueApObservation(const ApObservation &obs) {
+  noInterrupts();
+  uint8_t nextHead = (apObservationHead + 1) % AP_OBSERVATION_QUEUE_SIZE;
+
+  if (nextHead == apObservationTail) {
+    droppedApObservations++;
+    interrupts();
+    return false;
+  }
+
+  apObservationQueue[apObservationHead].ssidLength = obs.ssidLength;
+  for (uint8_t i = 0; i <= obs.ssidLength; i++) {
+    apObservationQueue[apObservationHead].ssid[i] = obs.ssid[i];
+  }
+  for (uint8_t i = 0; i < 6; i++) {
+    apObservationQueue[apObservationHead].bssid[i] = obs.bssid[i];
+  }
+  apObservationQueue[apObservationHead].channel = obs.channel;
+  apObservationQueue[apObservationHead].rssi = obs.rssi;
+  apObservationQueue[apObservationHead].security = obs.security;
+  apObservationQueue[apObservationHead].seenMs = obs.seenMs;
+
+  apObservationHead = nextHead;
+  interrupts();
+  return true;
+}
+
+bool dequeueApObservation(ApObservation &obs) {
+  bool hasItem = false;
+
+  noInterrupts();
+  if (apObservationTail != apObservationHead) {
+    obs.ssidLength = apObservationQueue[apObservationTail].ssidLength;
+    for (uint8_t i = 0; i <= obs.ssidLength; i++) {
+      obs.ssid[i] = apObservationQueue[apObservationTail].ssid[i];
+    }
+    for (uint8_t i = 0; i < 6; i++) {
+      obs.bssid[i] = apObservationQueue[apObservationTail].bssid[i];
+    }
+    obs.channel = apObservationQueue[apObservationTail].channel;
+    obs.rssi = apObservationQueue[apObservationTail].rssi;
+    obs.security = apObservationQueue[apObservationTail].security;
+    obs.seenMs = apObservationQueue[apObservationTail].seenMs;
+
+    apObservationTail = (apObservationTail + 1) % AP_OBSERVATION_QUEUE_SIZE;
+    hasItem = true;
+  }
+  interrupts();
+
+  return hasItem;
+}
+
+int findApRecordByBssid(const uint8_t* bssid) {
+  for (uint8_t i = 0; i < AP_TABLE_SIZE; i++) {
+    if (apTable[i].used && macEquals(apTable[i].bssid, bssid)) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+int findFreeOrOldestApRecord() {
+  int oldestIndex = 0;
+  uint32_t oldestSeen = 0xFFFFFFFF;
+
+  for (uint8_t i = 0; i < AP_TABLE_SIZE; i++) {
+    if (!apTable[i].used) return i;
+
+    if (apTable[i].lastSeenMs < oldestSeen) {
+      oldestSeen = apTable[i].lastSeenMs;
+      oldestIndex = i;
+    }
+  }
+
+  return oldestIndex;
+}
+
+void storeApObservation(const ApObservation &obs) {
+  int index = findApRecordByBssid(obs.bssid);
+
+  if (index < 0) {
+    index = findFreeOrOldestApRecord();
+    apTable[index].used = true;
+    apTable[index].firstSeenMs = obs.seenMs;
+    apTable[index].seenCount = 0;
+  }
+
+  apTable[index].ssidLength = obs.ssidLength;
+  for (uint8_t i = 0; i <= obs.ssidLength; i++) {
+    apTable[index].ssid[i] = obs.ssid[i];
+  }
+  for (uint8_t i = 0; i < 6; i++) {
+    apTable[index].bssid[i] = obs.bssid[i];
+  }
+
+  apTable[index].channel = obs.channel;
+  apTable[index].rssi = obs.rssi;
+  apTable[index].security = obs.security;
+  apTable[index].lastSeenMs = obs.seenMs;
+  if (apTable[index].seenCount < 0xFFFF) apTable[index].seenCount++;
+}
+
+void expireOldApRecords(uint32_t now) {
+  for (uint8_t i = 0; i < AP_TABLE_SIZE; i++) {
+    if (apTable[i].used && now - apTable[i].lastSeenMs > AP_RECORD_TTL_MS) {
+      apTable[i].used = false;
+    }
+  }
+}
+
+
+const char* apSecurityLabel(uint8_t security) {
+  switch (security) {
+    case AP_SEC_OPEN: return "OPEN";
+    case AP_SEC_WEP:  return "WEP";
+    case AP_SEC_WPA:  return "WPA";
+    case AP_SEC_WPA2: return "WPA2";
+    case AP_SEC_WPA3: return "WPA3";
+  }
+  return "UNKNOWN";
+}
+
+void buildEvilTwinReasonText(uint8_t flags, char* output, size_t outputSize) {
+  if (outputSize == 0) return;
+  output[0] = '\0';
+
+  struct ReasonName {
+    uint8_t flag;
+    const char* name;
+  };
+
+  const ReasonName reasons[] = {
+    {TWIN_REASON_SECURITY_MISMATCH, "security_mismatch"},
+    {TWIN_REASON_DIFFERENT_OUI,     "different_oui"},
+    {TWIN_REASON_DIFFERENT_CHANNEL, "different_channel"},
+    {TWIN_REASON_RSSI_DIFFERENCE,   "rssi_difference"},
+    {TWIN_REASON_NEW_AFTER_LEARN,   "new_after_learning"},
+    {TWIN_REASON_MULTI_BSSID,       "multiple_bssids"}
+  };
+
+  bool first = true;
+  for (uint8_t i = 0; i < sizeof(reasons) / sizeof(reasons[0]); i++) {
+    if ((flags & reasons[i].flag) == 0) continue;
+
+    if (!first) {
+      strncat(output, "|", outputSize - strlen(output) - 1);
+    }
+    strncat(output, reasons[i].name, outputSize - strlen(output) - 1);
+    first = false;
+  }
+
+  if (first) {
+    strncpy(output, "duplicate_ssid", outputSize - 1);
+    output[outputSize - 1] = '\0';
+  }
+}
+
+bool sameTwinPair(const uint8_t* a1, const uint8_t* b1,
+                  const uint8_t* a2, const uint8_t* b2) {
+  return (macEquals(a1, a2) && macEquals(b1, b2)) ||
+         (macEquals(a1, b2) && macEquals(b1, a2));
+}
+
+bool enqueueEvilTwinLogEvent(const ApRecord &known,
+                             const ApRecord &suspect,
+                             uint8_t riskScore,
+                             uint8_t reasonFlags) {
+  uint8_t nextHead = (evilTwinLogHead + 1) % EVIL_TWIN_LOG_QUEUE_SIZE;
+  if (nextHead == evilTwinLogTail) {
+    droppedEvilTwinLogEvents++;
+    return false;
+  }
+
+  EvilTwinLogEvent &evt = evilTwinLogQueue[evilTwinLogHead];
+  evt.ms = millis();
+  evt.riskScore = riskScore;
+  evt.reasonFlags = reasonFlags;
+  evt.knownChannel = known.channel;
+  evt.suspectChannel = suspect.channel;
+  evt.knownRssi = known.rssi;
+  evt.suspectRssi = suspect.rssi;
+  evt.knownSecurity = known.security;
+  evt.suspectSecurity = suspect.security;
+
+  strncpy(evt.ssid, known.ssid, sizeof(evt.ssid) - 1);
+  evt.ssid[sizeof(evt.ssid) - 1] = '\0';
+
+  for (uint8_t i = 0; i < 6; i++) {
+    evt.knownBssid[i] = known.bssid[i];
+    evt.suspectBssid[i] = suspect.bssid[i];
+  }
+
+  evilTwinLogHead = nextHead;
+  return true;
+}
+
+bool dequeueEvilTwinLogEvent(EvilTwinLogEvent &evt) {
+  if (evilTwinLogTail == evilTwinLogHead) return false;
+
+  evt = evilTwinLogQueue[evilTwinLogTail];
+  evilTwinLogTail = (evilTwinLogTail + 1) % EVIL_TWIN_LOG_QUEUE_SIZE;
+  return true;
+}
+
+void queueEvilTwinAlertIfNeeded(const ApRecord &known,
+                                const ApRecord &suspect,
+                                uint8_t riskScore,
+                                uint8_t reasonFlags) {
+  if (!sdLoggingEnabled || !sdCardReady) return;
+
+  unsigned long now = millis();
+  bool samePair = sameTwinPair(
+    known.bssid, suspect.bssid,
+    lastLoggedTwinBssidA, lastLoggedTwinBssidB
+  );
+
+  bool strongerRisk = riskScore > lastLoggedTwinRiskScore;
+  bool relogTimeReached = now - lastEvilTwinLogMs >= EVIL_TWIN_RELOG_INTERVAL_MS;
+
+  if (samePair && !strongerRisk && !relogTimeReached) return;
+
+  if (enqueueEvilTwinLogEvent(known, suspect, riskScore, reasonFlags)) {
+    for (uint8_t i = 0; i < 6; i++) {
+      lastLoggedTwinBssidA[i] = known.bssid[i];
+      lastLoggedTwinBssidB[i] = suspect.bssid[i];
+    }
+    lastLoggedTwinRiskScore = riskScore;
+    lastEvilTwinLogMs = now;
+  }
+}
+
+void evaluateEvilTwinRisk() {
+  uint32_t now = millis();
+
+  if (now - evilTwinLearningStartMs < EVIL_TWIN_LEARNING_MS) {
+    evilTwinRiskScore = 0;
+    evilTwinState = TWIN_LEARNING;
+    return;
+  }
+
+  uint8_t highestScore = 0;
+  uint8_t highestReasonFlags = 0;
+  int8_t bestKnownIndex = -1;
+  int8_t bestSuspectIndex = -1;
+
+  for (uint8_t i = 0; i < AP_TABLE_SIZE; i++) {
+    if (!apTable[i].used) continue;
+
+    uint8_t sameSsidCount = 1;
+
+    for (uint8_t j = i + 1; j < AP_TABLE_SIZE; j++) {
+      if (!apTable[j].used) continue;
+      if (!ssidEquals(apTable[i].ssid, apTable[i].ssidLength,
+                      apTable[j].ssid, apTable[j].ssidLength)) {
+        continue;
+      }
+
+      sameSsidCount++;
+      uint8_t score = 0;
+      uint8_t reasonFlags = 0;
+
+      if (apTable[i].security != apTable[j].security) {
+        score += TWIN_SCORE_SECURITY_MISMATCH;
+        reasonFlags |= TWIN_REASON_SECURITY_MISMATCH;
+      }
+
+      if (!ouiEquals(apTable[i].bssid, apTable[j].bssid)) {
+        score += TWIN_SCORE_DIFFERENT_OUI;
+        reasonFlags |= TWIN_REASON_DIFFERENT_OUI;
+      }
+
+      if (apTable[i].channel != apTable[j].channel) {
+        score += TWIN_SCORE_DIFFERENT_CHANNEL;
+        reasonFlags |= TWIN_REASON_DIFFERENT_CHANNEL;
+      }
+
+      int rssiDifference = (int)apTable[i].rssi - (int)apTable[j].rssi;
+      if (rssiDifference < 0) rssiDifference = -rssiDifference;
+      if (rssiDifference >= EVIL_TWIN_RSSI_DIFFERENCE_DB) {
+        score += TWIN_SCORE_RSSI_DIFFERENCE;
+        reasonFlags |= TWIN_REASON_RSSI_DIFFERENCE;
+      }
+
+      // A duplicate first seen after the learning window is more suspicious.
+      if (apTable[i].firstSeenMs >= evilTwinLearningStartMs + EVIL_TWIN_LEARNING_MS ||
+          apTable[j].firstSeenMs >= evilTwinLearningStartMs + EVIL_TWIN_LEARNING_MS) {
+        score += TWIN_SCORE_NEW_AFTER_LEARNING;
+        reasonFlags |= TWIN_REASON_NEW_AFTER_LEARN;
+      }
+
+      if (sameSsidCount >= 3) {
+        score += TWIN_SCORE_MULTIPLE_BSSIDS;
+        reasonFlags |= TWIN_REASON_MULTI_BSSID;
+      }
+
+      if (score > highestScore) {
+        highestScore = score;
+        highestReasonFlags = reasonFlags;
+
+        // Treat the AP seen first as the established/known record.
+        if (apTable[i].firstSeenMs <= apTable[j].firstSeenMs) {
+          bestKnownIndex = i;
+          bestSuspectIndex = j;
+        } else {
+          bestKnownIndex = j;
+          bestSuspectIndex = i;
+        }
+      }
+    }
+  }
+
+  EvilTwinState previousState = evilTwinState;
+  evilTwinRiskScore = highestScore;
+
+  if (highestScore >= EVIL_TWIN_HIGH_RISK_SCORE) {
+    evilTwinState = TWIN_HIGH_RISK;
+  } else if (highestScore >= EVIL_TWIN_SUSPICIOUS_SCORE) {
+    evilTwinState = TWIN_SUSPICIOUS;
+  } else {
+    evilTwinState = TWIN_CLEAR;
+  }
+
+  if ((evilTwinState == TWIN_SUSPICIOUS ||
+       evilTwinState == TWIN_HIGH_RISK) &&
+      bestKnownIndex >= 0 &&
+      bestSuspectIndex >= 0) {
+
+    // Display the Evil Twin warning art when a new alert appears or
+    // when its severity increases.
+    if (previousState != evilTwinState ||
+        evilTwinState == TWIN_HIGH_RISK) {
+      setVisualState(STATE_EVIL_TWIN_SEEN, EVIL_TWIN_VISUAL_DURATION_MS);
+      setLedMode(LED_MODE_ALERT, LED_ALERT_HOLD_MS);
+    }
+
+    queueEvilTwinAlertIfNeeded(
+      apTable[bestKnownIndex],
+      apTable[bestSuspectIndex],
+      highestScore,
+      highestReasonFlags
+    );
+  }
+}
+
+void processApObservationQueue() {
+  ApObservation obs;
+  uint8_t processed = 0;
+
+  while (processed < AP_OBSERVATIONS_PER_LOOP && dequeueApObservation(obs)) {
+    storeApObservation(obs);
+    processed++;
+  }
+
+  expireOldApRecords(millis());
+  evaluateEvilTwinRisk();
 }
 
 bool enqueueLogEvent(uint8_t subtype, uint8_t frameSubtypeHex, uint16_t reasonCode, int8_t rssi, const uint8_t* srcMac, const uint8_t* destMac, const uint8_t* bssidMac, uint8_t ch) {
@@ -486,6 +1024,18 @@ bool ensureLogFileHeader() {
   return true;
 }
 
+bool ensureEvilTwinLogFileHeader() {
+  if (!sdCardReady) return false;
+
+  if (!SD.exists(EVIL_TWIN_LOG_FILE_PATH)) {
+    File f = SD.open(EVIL_TWIN_LOG_FILE_PATH, FILE_WRITE);
+    if (!f) return false;
+    f.println("millis,ssid,risk_score,state,reasons,known_bssid,suspect_bssid,known_channel,suspect_channel,known_rssi,suspect_rssi,known_security,suspect_security");
+    f.close();
+  }
+  return true;
+}
+
 bool initSDCard() {
   sdSPI.begin(SD_SCK_PIN, SD_MISO_PIN, SD_MOSI_PIN, SD_CS_PIN);
 
@@ -495,7 +1045,7 @@ bool initSDCard() {
   }
 
   sdCardReady = true;
-  if (!ensureLogFileHeader()) {
+  if (!ensureLogFileHeader() || !ensureEvilTwinLogFileHeader()) {
     sdCardReady = false;
   }
   return sdCardReady;
@@ -542,16 +1092,79 @@ bool writeLogEventToSD(const LogEvent &evt) {
   return true;
 }
 
+void writeCsvQuoted(File &f, const char* value) {
+  f.print('"');
+  while (*value) {
+    if (*value == '"') f.print('"');
+    f.print(*value);
+    value++;
+  }
+  f.print('"');
+}
+
+bool writeEvilTwinEventToSD(const EvilTwinLogEvent &evt) {
+  if (!sdCardReady) return false;
+
+  File f = SD.open(EVIL_TWIN_LOG_FILE_PATH, FILE_APPEND);
+  if (!f) {
+    sdCardReady = false;
+    return false;
+  }
+
+  char knownBssidBuf[18];
+  char suspectBssidBuf[18];
+  char reasonText[128];
+
+  formatMac(evt.knownBssid, knownBssidBuf);
+  formatMac(evt.suspectBssid, suspectBssidBuf);
+  buildEvilTwinReasonText(evt.reasonFlags, reasonText, sizeof(reasonText));
+
+  f.print(evt.ms);
+  f.print(',');
+  writeCsvQuoted(f, evt.ssid);
+  f.print(',');
+  f.print(evt.riskScore);
+  f.print(',');
+  f.print((evt.riskScore >= EVIL_TWIN_HIGH_RISK_SCORE) ? "high" : "suspicious");
+  f.print(',');
+  writeCsvQuoted(f, reasonText);
+  f.print(',');
+  f.print(knownBssidBuf);
+  f.print(',');
+  f.print(suspectBssidBuf);
+  f.print(',');
+  f.print(evt.knownChannel);
+  f.print(',');
+  f.print(evt.suspectChannel);
+  f.print(',');
+  f.print(evt.knownRssi);
+  f.print(',');
+  f.print(evt.suspectRssi);
+  f.print(',');
+  f.print(apSecurityLabel(evt.knownSecurity));
+  f.print(',');
+  f.println(apSecurityLabel(evt.suspectSecurity));
+  f.close();
+
+  loggedEvilTwinEventsCount++;
+  return true;
+}
+
 // ============================================================
 // UI-thread event handling
 // ============================================================
 void handleDeauthEventOnUiThread() {
-  setVisualState(STATE_DEAUTH_SEEN, 650);
+  setVisualState(STATE_DEAUTH_SEEN, DEAUTH_VISUAL_DURATION_MS);
   setLedMode(LED_MODE_ALERT, LED_ALERT_HOLD_MS);
 }
 
 void triggerSdFlash() {
   setVisualState(STATE_SD_LOGGING, sdFlashDurationMs);
+  setLedMode(LED_MODE_SD_FLASH, LED_SD_FLASH_MS);
+}
+
+void triggerEvilTwinSdFlash() {
+  setVisualState(STATE_EVIL_TWIN_SD_LOGGING, sdFlashDurationMs);
   setLedMode(LED_MODE_SD_FLASH, LED_SD_FLASH_MS);
 }
 
@@ -567,6 +1180,13 @@ void wifiSnifferCallback(void* buf, wifi_promiscuous_pkt_type_t type) {
   const wifi_promiscuous_pkt_t* ppkt = (wifi_promiscuous_pkt_t*)buf;
   const uint8_t* payload = ppkt->payload;
   uint8_t frameControl0 = payload[0];
+
+  if (frameControl0 == 0x80 || frameControl0 == 0x50) {
+    ApObservation observation;
+    if (extractApObservation(ppkt, observation)) {
+      enqueueApObservation(observation);
+    }
+  }
 
   if (frameControl0 == 0xA0 || frameControl0 == 0xC0) {
     deauthPackets++;
@@ -590,7 +1210,7 @@ void hopChannelIfNeeded() {
   if (now - lastHopMs >= hopIntervalMs) {
     lastHopMs = now;
     currentChannel++;
-    if (currentChannel > maxChannel) currentChannel = minChannel;
+    if (currentChannel > MAX_CHANNEL) currentChannel = MIN_CHANNEL;
     applyCurrentChannel();
   }
 }
@@ -628,9 +1248,26 @@ void processPendingDeauthEvents() {
   pendingDeauthEvents = 0;
   interrupts();
 
-  while (pending > 0) {
+  if (pending == 0) return;
+
+  unsigned long now = millis();
+
+  // Begin a new burst window after the previous one expires.
+  if (deauthBurstWindowStartMs == 0 ||
+      now - deauthBurstWindowStartMs > DEAUTH_BURST_WINDOW_MS) {
+    deauthBurstWindowStartMs = now;
+    deauthBurstEventCount = 0;
+  }
+
+  deauthBurstEventCount += pending;
+
+  // Trigger one alert when the selected profile threshold is met.
+  // Resetting the window prevents one sustained burst from retriggering
+  // the UI on every loop pass.
+  if (deauthBurstEventCount >= DEAUTH_BURST_THRESHOLD) {
     handleDeauthEventOnUiThread();
-    pending--;
+    deauthBurstWindowStartMs = now;
+    deauthBurstEventCount = 0;
   }
 }
 
@@ -640,13 +1277,25 @@ void processSdLogQueue() {
   LogEvent evt;
   uint8_t writesThisLoop = 0;
 
-  while (writesThisLoop < 4 && dequeueLogEvent(evt)) {
+  while (writesThisLoop < DEAUTH_SD_WRITES_PER_LOOP && dequeueLogEvent(evt)) {
     if (writeLogEventToSD(evt)) {
       triggerSdFlash();
     } else {
       break;
     }
     writesThisLoop++;
+  }
+
+  EvilTwinLogEvent twinEvt;
+  uint8_t twinWritesThisLoop = 0;
+
+  while (twinWritesThisLoop < EVIL_TWIN_SD_WRITES_PER_LOOP && dequeueEvilTwinLogEvent(twinEvt)) {
+    if (writeEvilTwinEventToSD(twinEvt)) {
+      triggerEvilTwinSdFlash();
+    } else {
+      break;
+    }
+    twinWritesThisLoop++;
   }
 }
 
@@ -817,23 +1466,44 @@ void updateSpritePanel() {
     case STATE_SD_LOGGING:
       pushBrightImage(SPRITE_X, SPRITE_Y, PACKET_CAPTURE_WIDTH, PACKET_CAPTURE_HEIGHT, packet_capture, packetSpriteBuffer, PACKET_SPRITE_BRIGHTNESS);
       break;
+    case STATE_EVIL_TWIN_SEEN:
+      pushBrightImage(SPRITE_X, SPRITE_Y, EVIL_PACKETS_WIDTH, EVIL_PACKETS_HEIGHT, evil_packets, packetSpriteBuffer, PACKET_SPRITE_BRIGHTNESS);
+      break;
+    case STATE_EVIL_TWIN_SD_LOGGING:
+      pushBrightImage(SPRITE_X, SPRITE_Y, EVIL_CAPTURE_WIDTH, EVIL_CAPTURE_HEIGHT, evil_capture, packetSpriteBuffer, PACKET_SPRITE_BRIGHTNESS);
+      break;
   }
 
   lastDrawnState = currentState;
 }
 
 void updateSpriteInfoPanel() {
-  if (scanMode == lastDrawnScanMode) return;
+  bool showTwinStatus = shouldShowTwinStatus();
+
+  if (scanMode == lastDrawnScanMode &&
+      evilTwinState == lastDrawnEvilTwinState &&
+      showTwinStatus == lastDrawnShowingTwinStatus) {
+    return;
+  }
 
   tft.fillRoundRect(SPRITE_INFO_X + 1, SPRITE_INFO_Y + 1, SPRITE_INFO_W - 2, SPRITE_INFO_H - 2, 7, COL_PANEL);
   tft.drawRoundRect(SPRITE_INFO_X, SPRITE_INFO_Y, SPRITE_INFO_W, SPRITE_INFO_H, 8, COL_BORDER);
 
   tft.setTextDatum(TL_DATUM);
-  tft.setTextColor(COL_TEXT, COL_PANEL);
-  tft.drawString("State:", SPRITE_INFO_X + 6, SPRITE_INFO_Y + 6);
-  tft.drawString(stateLabel(), SPRITE_INFO_X + 6, SPRITE_INFO_Y + 22);
+
+  if (showTwinStatus) {
+    tft.setTextColor(evilTwinStatusColor(), COL_PANEL);
+    tft.drawString("Evil-Twin:", SPRITE_INFO_X + 6, SPRITE_INFO_Y + 6);
+    tft.drawString(evilTwinLabel(), SPRITE_INFO_X + 6, SPRITE_INFO_Y + 22);
+  } else {
+    tft.setTextColor(COL_TEXT, COL_PANEL);
+    tft.drawString("State:", SPRITE_INFO_X + 6, SPRITE_INFO_Y + 6);
+    tft.drawString(stateLabel(), SPRITE_INFO_X + 6, SPRITE_INFO_Y + 22);
+  }
 
   lastDrawnScanMode = scanMode;
+  lastDrawnEvilTwinState = evilTwinState;
+  lastDrawnShowingTwinStatus = showTwinStatus;
 }
 
 void updateGraphPanel() {
@@ -968,6 +1638,14 @@ void setup() {
     lastDrawnGraphData[i] = 255;
   }
 
+  for (int i = 0; i < AP_TABLE_SIZE; i++) {
+    apTable[i].used = false;
+  }
+  evilTwinLearningStartMs = millis();
+  evilTwinState = TWIN_LEARNING;
+  lastTwinClearDisplayMs = evilTwinLearningStartMs;
+  showingTwinClearStatus = false;
+
   tft.setTextDatum(MC_DATUM);
   tft.setTextColor(TFT_WHITE, TFT_BLACK);
   tft.drawString("Starting Deauth Sluth...", SCREEN_W / 2, SCREEN_H / 2 + 88);
@@ -980,6 +1658,8 @@ void setup() {
   lastDrawnState = (ScannerVisualState)255;
   lastDrawnChannel = 255;
   lastDrawnScanMode = (ScanMode)255;
+  lastDrawnEvilTwinState = (EvilTwinState)255;
+  lastDrawnShowingTwinStatus = false;
   lastDrawnSdLoggingEnabled = !sdLoggingEnabled;
   lastDrawnSdCardReady = !sdCardReady;
   lastDrawnHopInterval = 0xFFFFFFFF;
@@ -1001,6 +1681,7 @@ void setup() {
 void loop() {
   handleTouch();
   processPendingDeauthEvents();
+  processApObservationQueue();
   processSdLogQueue();
   updateGraphIfNeeded();
   hopChannelIfNeeded();
