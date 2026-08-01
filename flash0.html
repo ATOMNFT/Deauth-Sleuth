@@ -506,7 +506,7 @@
   <main class="page">
     <div class="topbar">
       <div class="brand">
-        <div class="brand-mark"><img src="Images\icon.png" alt="Deauth Sleuth icon"></div>
+        <div class="brand-mark"><img src="Images/icon.png" alt="Deauth Sleuth icon"></div>
         <div>
           <h1>Deauth Sleuth</h1>
           <p>Touchscreen ESP32 Wi-Fi monitoring firmware by ATOMNFT.</p>
@@ -514,7 +514,7 @@
       </div>
       <div class="status-pill">
         <span class="status-dot"></span>
-        V1: Fully Functional
+        V1.1: Fully Functional
       </div>
     </div>
 
@@ -525,13 +525,12 @@
         <p>
           Deauth Sleuth is a touchscreen ESP32 Wi-Fi monitoring project for the ESP32-2432S028R.
           It watches nearby 802.11 traffic in promiscuous mode, highlights deauthentication and
-          disassociation activity, and presents live status with touch controls, alert visuals,
-          SD logging, and RGB LED feedback in a cleaner futuristic layout.
+          disassociation activity, monitors for possible Evil Twin behavior, and presents live
+          status with touch controls, alert visuals, SD logging, and RGB LED feedback.
         </p>
         <div class="accent-row">
-          <div class="chip violet">Deauth / disassoc detection</div>
+          <div class="chip violet">Deauth / disassoc / Evil Twin detection + SD CSV logging</div>
           <div class="chip green">Auto + manual scan modes</div>
-          <div class="chip red">Touch UI + SD CSV logging</div>
         </div>
       </div>
 
@@ -546,7 +545,7 @@
         </div>
         <div class="metric red">
           <label>Core features</label>
-          <strong>Touch UI, RGB status, SD logs</strong>
+          <strong>Touch UI, Evil Twin, RGB status, SD logs</strong>
         </div>
       </div>
     </section>
@@ -562,8 +561,8 @@
           <label for="device-select">Firmware package</label>
           <select id="device-select">
             <option value="" selected disabled>Choose Deauth Sleuth build</option>
-            <option value="cyd">Deauth Sleuth-CYD • ESP32-2432S028R</option>
-            <option value="cyd2usb">Deauth Sleuth-CYD2USB • ESP32-2432S028R + USB variant</option>
+            <option value="cyd">Deauth Sleuth-CYD</option>
+            <option value="cyd2usb">Deauth Sleuth-CYD2USB</option>
           </select>
         </div>
 
@@ -629,8 +628,8 @@
     const visitorCounter = document.getElementById('visitor-counter');
 
     const manifests = {
-      cyd: 'https://raw.githubusercontent.com/ATOMNFT/Deauth-Sleuth/main/web/manifest_Deauth_Sleuth-CYD.json',
-      cyd2usb: 'https://raw.githubusercontent.com/ATOMNFT/Deauth-Sleuth/main/web/manifest_Deauth_Sleuth-CYD2USB.json'
+      cyd: 'https://raw.githubusercontent.com/ATOMNFT/Deauth-Sleuth/main/web/manifest_Deauth_Sleuth-CYD.json?v=2',
+      cyd2usb: 'https://raw.githubusercontent.com/ATOMNFT/Deauth-Sleuth/main/web/manifest_Deauth_Sleuth-CYD2USB.json?v=2'
     };
 
     select.addEventListener('change', (event) => {
