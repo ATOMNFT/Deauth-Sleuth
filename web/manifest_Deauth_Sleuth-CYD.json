@@ -1,0 +1,15 @@
+{
+  "name": "Deauth_Sleuth-CYD",
+  "builds": [
+    {
+      "chipFamily": "ESP32",
+      "improv": false,
+      "parts": [
+        {
+          "path": "Deauth_Sleuth-CYD.bin",
+          "offset": 0
+        }
+      ]
+    }
+  ]
+}
