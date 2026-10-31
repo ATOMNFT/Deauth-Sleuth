@@ -151,6 +151,61 @@ static const int TOUCH_HOP_H = HEADER_H;
 #define COL_WARN       0xFD20
 
 
+
+// ============================================================
+// USB Serial / Home Assistant integration
+// ============================================================
+// Deauth Sleuth outputs one JSON object per line (JSONL/NDJSON).
+// This is designed for Home Assistant, Node-RED, scripts, and other
+// serial consumers. Keep SERIAL_PROTOCOL_VERSION stable when adding
+// optional fields; increment it only for breaking schema changes.
+static const bool SERIAL_OUTPUT_ENABLED = true;
+static const unsigned long SERIAL_BAUD_RATE = 115200;
+static const uint8_t SERIAL_PROTOCOL_VERSION = 1;
+static const unsigned long SERIAL_HEARTBEAT_INTERVAL_MS = 30000;
+
+// Individual event types can be disabled without disabling Serial entirely.
+static const bool SERIAL_DEAUTH_EVENTS_ENABLED = true;
+static const bool SERIAL_EVIL_TWIN_EVENTS_ENABLED = true;
+static const bool SERIAL_STATUS_EVENTS_ENABLED = true;
+
+// When false, event JSON is emitted only when it matches a watched
+// SSID or BSSID. Status/boot messages are still emitted.
+static const bool SERIAL_INCLUDE_UNWATCHED_EVENTS = true;
+
+// Deauth Sleuth already starts monitoring automatically after boot.
+// Set false only for development/testing where passive monitoring
+// should not begin automatically.
+static const bool AUTO_START_MONITORING = true;
+
+// ============================================================
+// Protected / watched networks
+// ============================================================
+// Optional: populate these arrays to identify events involving your own
+// Wi-Fi networks. Set the matching COUNT to the number of active entries.
+// Keep unused entries as empty strings.
+//
+// Example:
+//   WATCHED_SSIDS[0] = "HomeWiFi" is not legal at runtime because these
+//   are constants. Instead edit the string below and set COUNT to 1.
+//
+// BSSID strings should use AA:BB:CC:DD:EE:FF format.
+static const char* const WATCHED_SSIDS[] = {
+  "",
+  "",
+  "",
+  ""
+};
+static const uint8_t WATCHED_SSID_COUNT = 0;
+
+static const char* const WATCHED_BSSIDS[] = {
+  "",
+  "",
+  "",
+  ""
+};
+static const uint8_t WATCHED_BSSID_COUNT = 0;
+
 // ============================================================
 // Alert sensitivity profile
 // ============================================================
@@ -255,6 +310,11 @@ static const uint8_t TWIN_SCORE_MULTIPLE_BSSIDS = 1;
 // Processing and visual timing.
 static const uint8_t AP_OBSERVATIONS_PER_LOOP = 8;
 static const unsigned long EVIL_TWIN_VISUAL_DURATION_MS = 1200;
+
+static_assert(WATCHED_SSID_COUNT <= (sizeof(WATCHED_SSIDS) / sizeof(WATCHED_SSIDS[0])),
+              "WATCHED_SSID_COUNT exceeds WATCHED_SSIDS entries");
+static_assert(WATCHED_BSSID_COUNT <= (sizeof(WATCHED_BSSIDS) / sizeof(WATCHED_BSSIDS[0])),
+              "WATCHED_BSSID_COUNT exceeds WATCHED_BSSIDS entries");
 
 static_assert(DEAUTH_BURST_THRESHOLD >= 1,
               "DEAUTH_BURST_THRESHOLD must be at least 1");
