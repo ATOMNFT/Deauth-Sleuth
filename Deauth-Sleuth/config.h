@@ -153,6 +153,22 @@ static const int TOUCH_HOP_H = HEADER_H;
 
 
 // ============================================================
+// Headless mode
+// ============================================================
+// Set to 1 to run Deauth Sleuth as a display-free ESP32 sensor.
+// In headless mode the TFT, touch UI, RGB LED, splash screen, and
+// CYD SD-card hardware are not initialized. Wi-Fi monitoring and
+// USB Serial JSON continue to operate normally.
+//
+// Keep this at 0 for the normal CYD touchscreen build.
+#define HEADLESS_MODE 0
+
+// Optional SD support while HEADLESS_MODE is enabled.
+// Leave at 0 for generic ESP32 boards unless you have intentionally
+// wired an SD card using the configured SD pins below.
+#define HEADLESS_SD_ENABLED 0
+
+// ============================================================
 // USB Serial / Home Assistant integration
 // ============================================================
 // Deauth Sleuth outputs one JSON object per line (JSONL/NDJSON).
