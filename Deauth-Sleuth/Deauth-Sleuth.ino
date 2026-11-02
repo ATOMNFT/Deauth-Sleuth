@@ -1,6 +1,6 @@
 /*
   ============================================================
-  Deauth Sleuth v1.1
+  Deauth Sleuth v1.21
   Board: ESP32-2432S028R
   Framework: Arduino / ESP32 core 2.0.10
   Display: 320x240 TFT using TFT_eSPI
@@ -29,6 +29,9 @@
   - RGB LED feedback for scanning, alerts, and SD writes
   - User-adjustable settings stored in config.h
   - Low, Balanced, and High alert sensitivity profiles
+  - Structured USB Serial JSON output for Home Assistant / Node-RED
+  - Optional watched SSID/BSSID matching for protected networks
+  - Headless mode for display-free ESP32 monitoring nodes
 
   This project is intended as a compact ESP32 wireless activity
   viewer with a simple touch interface, live feedback, and
@@ -88,9 +91,15 @@ static inline uint8_t ledFix(uint8_t v) {
 }
 
 void setRgbLed(uint8_t r, uint8_t g, uint8_t b) {
+#if !HEADLESS_MODE
   analogWrite(R_PIN, ledFix(r));
   analogWrite(G_PIN, ledFix(g));
   analogWrite(B_PIN, ledFix(b));
+#else
+  (void)r;
+  (void)g;
+  (void)b;
+#endif
 }
 
 void setLedMode(LedMode mode, unsigned long holdMs = 0) {
@@ -111,10 +120,12 @@ void setLedMode(LedMode mode, unsigned long holdMs = 0) {
 }
 
 void updateLedState() {
+#if !HEADLESS_MODE
   if (ledModeUntilMs != 0 && millis() >= ledModeUntilMs) {
     ledModeUntilMs = 0;
     setLedMode(LED_MODE_SCAN);
   }
+#endif
 }
 
 
@@ -332,6 +343,11 @@ unsigned long lastTouchToggleMs = 0;
 unsigned long touchDebounceMs = 220;
 
 // ============================================================
+// USB Serial integration state
+// ============================================================
+unsigned long lastSerialHeartbeatMs = 0;
+
+// ============================================================
 // Brightness / RGB565 helpers
 // ============================================================
 static inline uint8_t clamp8(int v) {
@@ -407,6 +423,50 @@ const char* stateLabel() {
 void formatMac(const uint8_t* mac, char* out) {
   sprintf(out, "%02X:%02X:%02X:%02X:%02X:%02X",
           mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+}
+
+bool textEqualsIgnoreCase(const char* a, const char* b) {
+  if (!a || !b) return false;
+  while (*a && *b) {
+    char ca = *a++;
+    char cb = *b++;
+    if (ca >= 'a' && ca <= 'z') ca -= 32;
+    if (cb >= 'a' && cb <= 'z') cb -= 32;
+    if (ca != cb) return false;
+  }
+  return *a == '\0' && *b == '\0';
+}
+
+bool isWatchedSsid(const char* ssid) {
+  if (!ssid || ssid[0] == '\0') return false;
+  for (uint8_t i = 0; i < WATCHED_SSID_COUNT; i++) {
+    if (WATCHED_SSIDS[i][0] != '\0' && strcmp(ssid, WATCHED_SSIDS[i]) == 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool isWatchedBssid(const uint8_t* bssid) {
+  char mac[18];
+  formatMac(bssid, mac);
+  for (uint8_t i = 0; i < WATCHED_BSSID_COUNT; i++) {
+    if (WATCHED_BSSIDS[i][0] != '\0' &&
+        textEqualsIgnoreCase(mac, WATCHED_BSSIDS[i])) {
+      return true;
+    }
+  }
+  return false;
+}
+
+const char* sensitivityProfileLabel() {
+#if ALERT_SENSITIVITY_PROFILE == SENSITIVITY_LOW
+  return "low";
+#elif ALERT_SENSITIVITY_PROFILE == SENSITIVITY_HIGH
+  return "high";
+#else
+  return "balanced";
+#endif
 }
 
 void applyCurrentChannel() {
@@ -809,7 +869,7 @@ void queueEvilTwinAlertIfNeeded(const ApRecord &known,
                                 const ApRecord &suspect,
                                 uint8_t riskScore,
                                 uint8_t reasonFlags) {
-  if (!sdLoggingEnabled || !sdCardReady) return;
+  if (!SERIAL_OUTPUT_ENABLED && (!sdLoggingEnabled || !sdCardReady)) return;
 
   unsigned long now = millis();
   bool samePair = sameTwinPair(
@@ -930,11 +990,13 @@ void evaluateEvilTwinRisk() {
 
     // Display the Evil Twin warning art when a new alert appears or
     // when its severity increases.
+#if !HEADLESS_MODE
     if (previousState != evilTwinState ||
         evilTwinState == TWIN_HIGH_RISK) {
       setVisualState(STATE_EVIL_TWIN_SEEN, EVIL_TWIN_VISUAL_DURATION_MS);
       setLedMode(LED_MODE_ALERT, LED_ALERT_HOLD_MS);
     }
+#endif
 
     queueEvilTwinAlertIfNeeded(
       apTable[bestKnownIndex],
@@ -1151,21 +1213,216 @@ bool writeEvilTwinEventToSD(const EvilTwinLogEvent &evt) {
 }
 
 // ============================================================
+// USB Serial JSON output
+// ============================================================
+void serialPrintJsonString(const char* value) {
+  Serial.print('"');
+  if (value) {
+    while (*value) {
+      char c = *value++;
+      switch (c) {
+        case '"':  Serial.print("\\\""); break;
+        case '\\': Serial.print("\\\\"); break;
+        case '\b': Serial.print("\\b"); break;
+        case '\f': Serial.print("\\f"); break;
+        case '\n': Serial.print("\\n"); break;
+        case '\r': Serial.print("\\r"); break;
+        case '\t': Serial.print("\\t"); break;
+        default:
+          if ((uint8_t)c >= 0x20) Serial.print(c);
+          break;
+      }
+    }
+  }
+  Serial.print('"');
+}
+
+void serialPrintBool(bool value) {
+  Serial.print(value ? "true" : "false");
+}
+
+bool shouldEmitSecurityEvent(bool watched) {
+  return SERIAL_OUTPUT_ENABLED &&
+         (SERIAL_INCLUDE_UNWATCHED_EVENTS || watched);
+}
+
+void emitSerialBootEvent() {
+  if (!SERIAL_OUTPUT_ENABLED) return;
+
+  Serial.print("{\"protocol\":");
+  Serial.print(SERIAL_PROTOCOL_VERSION);
+  Serial.print(",\"event\":\"boot\",\"device\":\"deauth_sleuth\",\"firmware\":\"1.21\"");
+  Serial.print(",\"auto_start\":");
+  serialPrintBool(AUTO_START_MONITORING);
+  Serial.print(",\"headless\":");
+  serialPrintBool(HEADLESS_MODE != 0);
+  Serial.print(",\"baud\":");
+  Serial.print(SERIAL_BAUD_RATE);
+  Serial.print(",\"sensitivity\":");
+  serialPrintJsonString(sensitivityProfileLabel());
+  Serial.println("}");
+}
+
+void emitSerialDeauthEvent(const LogEvent &evt) {
+  if (!SERIAL_DEAUTH_EVENTS_ENABLED) return;
+
+  char srcBuf[18];
+  char destBuf[18];
+  char bssidBuf[18];
+  formatMac(evt.src, srcBuf);
+  formatMac(evt.dest, destBuf);
+  formatMac(evt.bssid, bssidBuf);
+
+  const char* ssid = "";
+  int apIndex = findApRecordByBssid(evt.bssid);
+  if (apIndex >= 0) ssid = apTable[apIndex].ssid;
+
+  bool watched = isWatchedBssid(evt.bssid) || isWatchedSsid(ssid);
+  if (!shouldEmitSecurityEvent(watched)) return;
+
+  Serial.print("{\"protocol\":");
+  Serial.print(SERIAL_PROTOCOL_VERSION);
+  Serial.print(",\"event\":");
+  serialPrintJsonString((evt.subtype == 0xC0) ? "deauth" : "disassoc");
+  Serial.print(",\"millis\":");
+  Serial.print(evt.ms);
+  Serial.print(",\"channel\":");
+  Serial.print(evt.channel);
+  Serial.print(",\"rssi\":");
+  Serial.print(evt.rssi);
+  Serial.print(",\"reason_code\":");
+  Serial.print(evt.reasonCode);
+  Serial.print(",\"source\":");
+  serialPrintJsonString(srcBuf);
+  Serial.print(",\"destination\":");
+  serialPrintJsonString(destBuf);
+  Serial.print(",\"bssid\":");
+  serialPrintJsonString(bssidBuf);
+  Serial.print(",\"ssid\":");
+  serialPrintJsonString(ssid);
+  Serial.print(",\"watched_network\":");
+  serialPrintBool(watched);
+  Serial.println("}");
+}
+
+void emitSerialEvilTwinEvent(const EvilTwinLogEvent &evt) {
+  if (!SERIAL_EVIL_TWIN_EVENTS_ENABLED) return;
+
+  char knownBssidBuf[18];
+  char suspectBssidBuf[18];
+  char reasonText[128];
+  formatMac(evt.knownBssid, knownBssidBuf);
+  formatMac(evt.suspectBssid, suspectBssidBuf);
+  buildEvilTwinReasonText(evt.reasonFlags, reasonText, sizeof(reasonText));
+
+  bool watched = isWatchedSsid(evt.ssid) ||
+                 isWatchedBssid(evt.knownBssid) ||
+                 isWatchedBssid(evt.suspectBssid);
+  if (!shouldEmitSecurityEvent(watched)) return;
+
+  Serial.print("{\"protocol\":");
+  Serial.print(SERIAL_PROTOCOL_VERSION);
+  Serial.print(",\"event\":\"evil_twin\",\"millis\":");
+  Serial.print(evt.ms);
+  Serial.print(",\"ssid\":");
+  serialPrintJsonString(evt.ssid);
+  Serial.print(",\"risk_score\":");
+  Serial.print(evt.riskScore);
+  Serial.print(",\"level\":");
+  serialPrintJsonString((evt.riskScore >= EVIL_TWIN_HIGH_RISK_SCORE) ? "high" : "suspicious");
+  Serial.print(",\"reasons\":");
+  serialPrintJsonString(reasonText);
+  Serial.print(",\"known_bssid\":");
+  serialPrintJsonString(knownBssidBuf);
+  Serial.print(",\"suspect_bssid\":");
+  serialPrintJsonString(suspectBssidBuf);
+  Serial.print(",\"known_channel\":");
+  Serial.print(evt.knownChannel);
+  Serial.print(",\"suspect_channel\":");
+  Serial.print(evt.suspectChannel);
+  Serial.print(",\"known_rssi\":");
+  Serial.print(evt.knownRssi);
+  Serial.print(",\"suspect_rssi\":");
+  Serial.print(evt.suspectRssi);
+  Serial.print(",\"known_security\":");
+  serialPrintJsonString(apSecurityLabel(evt.knownSecurity));
+  Serial.print(",\"suspect_security\":");
+  serialPrintJsonString(apSecurityLabel(evt.suspectSecurity));
+  Serial.print(",\"watched_network\":");
+  serialPrintBool(watched);
+  Serial.println("}");
+}
+
+void emitSerialStatusEvent() {
+  if (!SERIAL_OUTPUT_ENABLED || !SERIAL_STATUS_EVENTS_ENABLED) return;
+
+  Serial.print("{\"protocol\":");
+  Serial.print(SERIAL_PROTOCOL_VERSION);
+  Serial.print(",\"event\":\"status\",\"millis\":");
+  Serial.print(millis());
+  Serial.print(",\"monitoring\":");
+  serialPrintBool(AUTO_START_MONITORING);
+  Serial.print(",\"headless\":");
+  serialPrintBool(HEADLESS_MODE != 0);
+  Serial.print(",\"scan_mode\":");
+  serialPrintJsonString((scanMode == MODE_AUTO_SCAN) ? "auto" : "manual");
+  Serial.print(",\"channel\":");
+  Serial.print(currentChannel);
+  Serial.print(",\"packets\":");
+  Serial.print(totalPacketsUi);
+  Serial.print(",\"deauth_total\":");
+  Serial.print(deauthPacketsUi);
+  Serial.print(",\"evil_twin_state\":");
+  serialPrintJsonString(evilTwinLabel());
+  Serial.print(",\"evil_twin_risk\":");
+  Serial.print(evilTwinRiskScore);
+  Serial.print(",\"sd_ready\":");
+  serialPrintBool(sdCardReady);
+  Serial.print(",\"sd_logging\":");
+  serialPrintBool(sdLoggingEnabled);
+  Serial.print(",\"sensitivity\":");
+  serialPrintJsonString(sensitivityProfileLabel());
+  Serial.print(",\"free_heap\":");
+  Serial.print(ESP.getFreeHeap());
+  Serial.print(",\"dropped_event_queue\":");
+  Serial.print(droppedEventsUi);
+  Serial.print(",\"dropped_ap_queue\":");
+  Serial.print(droppedApObservations);
+  Serial.println("}");
+}
+
+void processSerialHeartbeat() {
+  if (!SERIAL_OUTPUT_ENABLED || !SERIAL_STATUS_EVENTS_ENABLED) return;
+
+  unsigned long now = millis();
+  if (now - lastSerialHeartbeatMs >= SERIAL_HEARTBEAT_INTERVAL_MS) {
+    lastSerialHeartbeatMs = now;
+    emitSerialStatusEvent();
+  }
+}
+
+// ============================================================
 // UI-thread event handling
 // ============================================================
 void handleDeauthEventOnUiThread() {
+#if !HEADLESS_MODE
   setVisualState(STATE_DEAUTH_SEEN, DEAUTH_VISUAL_DURATION_MS);
   setLedMode(LED_MODE_ALERT, LED_ALERT_HOLD_MS);
+#endif
 }
 
 void triggerSdFlash() {
+#if !HEADLESS_MODE
   setVisualState(STATE_SD_LOGGING, sdFlashDurationMs);
   setLedMode(LED_MODE_SD_FLASH, LED_SD_FLASH_MS);
+#endif
 }
 
 void triggerEvilTwinSdFlash() {
+#if !HEADLESS_MODE
   setVisualState(STATE_EVIL_TWIN_SD_LOGGING, sdFlashDurationMs);
   setLedMode(LED_MODE_SD_FLASH, LED_SD_FLASH_MS);
+#endif
 }
 
 // ============================================================
@@ -1192,7 +1449,7 @@ void wifiSnifferCallback(void* buf, wifi_promiscuous_pkt_type_t type) {
     deauthPackets++;
     if (pendingDeauthEvents < 20) pendingDeauthEvents++;
 
-    if (sdLoggingEnabled && sdCardReady) {
+    if (SERIAL_OUTPUT_ENABLED || (sdLoggingEnabled && sdCardReady)) {
       uint16_t reasonCode = (uint16_t)payload[24] | ((uint16_t)payload[25] << 8);
       enqueueLogEvent(frameControl0, frameControl0, reasonCode, ppkt->rx_ctrl.rssi, payload + 10, payload + 4, payload + 16, currentChannel);
     }
@@ -1271,31 +1528,36 @@ void processPendingDeauthEvents() {
   }
 }
 
-void processSdLogQueue() {
-  if (!sdLoggingEnabled || !sdCardReady) return;
-
+void processEventOutputQueue() {
   LogEvent evt;
-  uint8_t writesThisLoop = 0;
+  uint8_t processedThisLoop = 0;
 
-  while (writesThisLoop < DEAUTH_SD_WRITES_PER_LOOP && dequeueLogEvent(evt)) {
-    if (writeLogEventToSD(evt)) {
-      triggerSdFlash();
-    } else {
-      break;
+  while (processedThisLoop < DEAUTH_SD_WRITES_PER_LOOP && dequeueLogEvent(evt)) {
+    emitSerialDeauthEvent(evt);
+
+    if (sdLoggingEnabled && sdCardReady) {
+      if (writeLogEventToSD(evt)) {
+        triggerSdFlash();
+      }
     }
-    writesThisLoop++;
+
+    processedThisLoop++;
   }
 
   EvilTwinLogEvent twinEvt;
-  uint8_t twinWritesThisLoop = 0;
+  uint8_t twinProcessedThisLoop = 0;
 
-  while (twinWritesThisLoop < EVIL_TWIN_SD_WRITES_PER_LOOP && dequeueEvilTwinLogEvent(twinEvt)) {
-    if (writeEvilTwinEventToSD(twinEvt)) {
-      triggerEvilTwinSdFlash();
-    } else {
-      break;
+  while (twinProcessedThisLoop < EVIL_TWIN_SD_WRITES_PER_LOOP &&
+         dequeueEvilTwinLogEvent(twinEvt)) {
+    emitSerialEvilTwinEvent(twinEvt);
+
+    if (sdLoggingEnabled && sdCardReady) {
+      if (writeEvilTwinEventToSD(twinEvt)) {
+        triggerEvilTwinSdFlash();
+      }
     }
-    twinWritesThisLoop++;
+
+    twinProcessedThisLoop++;
   }
 }
 
@@ -1615,9 +1877,10 @@ void setupWifiSniffer() {
 // Setup
 // ============================================================
 void setup() {
-  Serial.begin(115200);
+  Serial.begin(SERIAL_BAUD_RATE);
   delay(200);
 
+#if !HEADLESS_MODE
   pinMode(TFT_BL, OUTPUT);
   digitalWrite(TFT_BL, TFT_BACKLIGHT_ON);
 
@@ -1632,6 +1895,7 @@ void setup() {
   delay(100);
 
   drawSplashScreen();
+#endif
 
   for (int i = 0; i < GRAPH_POINTS; i++) {
     graphData[i] = 0;
@@ -1646,14 +1910,23 @@ void setup() {
   lastTwinClearDisplayMs = evilTwinLearningStartMs;
   showingTwinClearStatus = false;
 
+#if !HEADLESS_MODE
   tft.setTextDatum(MC_DATUM);
   tft.setTextColor(TFT_WHITE, TFT_BLACK);
   tft.drawString("Starting Deauth Sluth...", SCREEN_W / 2, SCREEN_H / 2 + 88);
   delay(400);
+#endif
 
+#if !HEADLESS_MODE || HEADLESS_SD_ENABLED
   initSDCard();
+#else
+  sdCardReady = false;
+  sdLoggingEnabled = false;
+#endif
 
+#if !HEADLESS_MODE
   drawStaticUI();
+#endif
 
   lastDrawnState = (ScannerVisualState)255;
   lastDrawnChannel = 255;
@@ -1670,24 +1943,39 @@ void setup() {
   lastDrawnDroppedEventsUi = 0xFFFFFFFF;
 
   copyStatsForUi();
+#if !HEADLESS_MODE
   updateDynamicUI();
+#endif
 
-  setupWifiSniffer();
+  if (AUTO_START_MONITORING) {
+    setupWifiSniffer();
+  }
+
+  emitSerialBootEvent();
+  emitSerialStatusEvent();
+  lastSerialHeartbeatMs = millis();
 }
 
 // ============================================================
 // Loop
 // ============================================================
 void loop() {
+#if !HEADLESS_MODE
   handleTouch();
+#endif
   processPendingDeauthEvents();
   processApObservationQueue();
-  processSdLogQueue();
+  processEventOutputQueue();
   updateGraphIfNeeded();
   hopChannelIfNeeded();
   handleStateTimeout();
+#if !HEADLESS_MODE
   updateLedState();
+#endif
   copyStatsForUi();
+#if !HEADLESS_MODE
   updateDynamicUI();
+#endif
+  processSerialHeartbeat();
   delay(35);
 }
