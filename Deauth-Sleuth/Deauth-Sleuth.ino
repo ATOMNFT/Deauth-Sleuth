@@ -1,6 +1,6 @@
 /*
   ============================================================
-  Deauth Sleuth v1.2
+  Deauth Sleuth v1.21
   Board: ESP32-2432S028R
   Framework: Arduino / ESP32 core 2.0.10
   Display: 320x240 TFT using TFT_eSPI
@@ -31,6 +31,7 @@
   - Low, Balanced, and High alert sensitivity profiles
   - Structured USB Serial JSON output for Home Assistant / Node-RED
   - Optional watched SSID/BSSID matching for protected networks
+  - Headless mode for display-free ESP32 monitoring nodes
 
   This project is intended as a compact ESP32 wireless activity
   viewer with a simple touch interface, live feedback, and
@@ -90,9 +91,15 @@ static inline uint8_t ledFix(uint8_t v) {
 }
 
 void setRgbLed(uint8_t r, uint8_t g, uint8_t b) {
+#if !HEADLESS_MODE
   analogWrite(R_PIN, ledFix(r));
   analogWrite(G_PIN, ledFix(g));
   analogWrite(B_PIN, ledFix(b));
+#else
+  (void)r;
+  (void)g;
+  (void)b;
+#endif
 }
 
 void setLedMode(LedMode mode, unsigned long holdMs = 0) {
@@ -113,10 +120,12 @@ void setLedMode(LedMode mode, unsigned long holdMs = 0) {
 }
 
 void updateLedState() {
+#if !HEADLESS_MODE
   if (ledModeUntilMs != 0 && millis() >= ledModeUntilMs) {
     ledModeUntilMs = 0;
     setLedMode(LED_MODE_SCAN);
   }
+#endif
 }
 
 
@@ -981,11 +990,13 @@ void evaluateEvilTwinRisk() {
 
     // Display the Evil Twin warning art when a new alert appears or
     // when its severity increases.
+#if !HEADLESS_MODE
     if (previousState != evilTwinState ||
         evilTwinState == TWIN_HIGH_RISK) {
       setVisualState(STATE_EVIL_TWIN_SEEN, EVIL_TWIN_VISUAL_DURATION_MS);
       setLedMode(LED_MODE_ALERT, LED_ALERT_HOLD_MS);
     }
+#endif
 
     queueEvilTwinAlertIfNeeded(
       apTable[bestKnownIndex],
@@ -1240,9 +1251,11 @@ void emitSerialBootEvent() {
 
   Serial.print("{\"protocol\":");
   Serial.print(SERIAL_PROTOCOL_VERSION);
-  Serial.print(",\"event\":\"boot\",\"device\":\"deauth_sleuth\",\"firmware\":\"1.2\"");
+  Serial.print(",\"event\":\"boot\",\"device\":\"deauth_sleuth\",\"firmware\":\"1.21\"");
   Serial.print(",\"auto_start\":");
   serialPrintBool(AUTO_START_MONITORING);
+  Serial.print(",\"headless\":");
+  serialPrintBool(HEADLESS_MODE != 0);
   Serial.print(",\"baud\":");
   Serial.print(SERIAL_BAUD_RATE);
   Serial.print(",\"sensitivity\":");
@@ -1349,6 +1362,8 @@ void emitSerialStatusEvent() {
   Serial.print(millis());
   Serial.print(",\"monitoring\":");
   serialPrintBool(AUTO_START_MONITORING);
+  Serial.print(",\"headless\":");
+  serialPrintBool(HEADLESS_MODE != 0);
   Serial.print(",\"scan_mode\":");
   serialPrintJsonString((scanMode == MODE_AUTO_SCAN) ? "auto" : "manual");
   Serial.print(",\"channel\":");
@@ -1390,18 +1405,24 @@ void processSerialHeartbeat() {
 // UI-thread event handling
 // ============================================================
 void handleDeauthEventOnUiThread() {
+#if !HEADLESS_MODE
   setVisualState(STATE_DEAUTH_SEEN, DEAUTH_VISUAL_DURATION_MS);
   setLedMode(LED_MODE_ALERT, LED_ALERT_HOLD_MS);
+#endif
 }
 
 void triggerSdFlash() {
+#if !HEADLESS_MODE
   setVisualState(STATE_SD_LOGGING, sdFlashDurationMs);
   setLedMode(LED_MODE_SD_FLASH, LED_SD_FLASH_MS);
+#endif
 }
 
 void triggerEvilTwinSdFlash() {
+#if !HEADLESS_MODE
   setVisualState(STATE_EVIL_TWIN_SD_LOGGING, sdFlashDurationMs);
   setLedMode(LED_MODE_SD_FLASH, LED_SD_FLASH_MS);
+#endif
 }
 
 // ============================================================
@@ -1859,6 +1880,7 @@ void setup() {
   Serial.begin(SERIAL_BAUD_RATE);
   delay(200);
 
+#if !HEADLESS_MODE
   pinMode(TFT_BL, OUTPUT);
   digitalWrite(TFT_BL, TFT_BACKLIGHT_ON);
 
@@ -1873,6 +1895,7 @@ void setup() {
   delay(100);
 
   drawSplashScreen();
+#endif
 
   for (int i = 0; i < GRAPH_POINTS; i++) {
     graphData[i] = 0;
@@ -1887,14 +1910,23 @@ void setup() {
   lastTwinClearDisplayMs = evilTwinLearningStartMs;
   showingTwinClearStatus = false;
 
+#if !HEADLESS_MODE
   tft.setTextDatum(MC_DATUM);
   tft.setTextColor(TFT_WHITE, TFT_BLACK);
   tft.drawString("Starting Deauth Sluth...", SCREEN_W / 2, SCREEN_H / 2 + 88);
   delay(400);
+#endif
 
+#if !HEADLESS_MODE || HEADLESS_SD_ENABLED
   initSDCard();
+#else
+  sdCardReady = false;
+  sdLoggingEnabled = false;
+#endif
 
+#if !HEADLESS_MODE
   drawStaticUI();
+#endif
 
   lastDrawnState = (ScannerVisualState)255;
   lastDrawnChannel = 255;
@@ -1911,7 +1943,9 @@ void setup() {
   lastDrawnDroppedEventsUi = 0xFFFFFFFF;
 
   copyStatsForUi();
+#if !HEADLESS_MODE
   updateDynamicUI();
+#endif
 
   if (AUTO_START_MONITORING) {
     setupWifiSniffer();
@@ -1926,16 +1960,22 @@ void setup() {
 // Loop
 // ============================================================
 void loop() {
+#if !HEADLESS_MODE
   handleTouch();
+#endif
   processPendingDeauthEvents();
   processApObservationQueue();
   processEventOutputQueue();
   updateGraphIfNeeded();
   hopChannelIfNeeded();
   handleStateTimeout();
+#if !HEADLESS_MODE
   updateLedState();
+#endif
   copyStatsForUi();
+#if !HEADLESS_MODE
   updateDynamicUI();
+#endif
   processSerialHeartbeat();
   delay(35);
 }
