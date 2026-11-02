@@ -6,10 +6,10 @@
 ![Touch](https://img.shields.io/badge/Touch-Enabled-16A34A?style=for-the-badge)
 ![Logging](https://img.shields.io/badge/Logging-SD%20CSV-15803D?style=for-the-badge)
 ![Evil Twin](https://img.shields.io/badge/Evil%20Twin-Detection-B22222?style=for-the-badge)
-![Version](https://img.shields.io/badge/Version-1.2--dev-228B22?style=for-the-badge)
+![Version](https://img.shields.io/badge/Version-1.21--dev-228B22?style=for-the-badge)
 ![Status](https://img.shields.io/badge/Status-Working-22C55E?style=for-the-badge)
 
-# 🔎 Deauth Sleuth v1.2 Development
+# 🔎 Deauth Sleuth v1.21 Development
 
 ![Deauth Sleuth header](Images/header-image.png)
 
@@ -45,6 +45,7 @@ Flashing instructions & web flasher tool below.
 - Outputs structured **USB Serial JSON** for Home Assistant, Node-RED, and scripts
 - Supports optional **watched SSID/BSSID matching** to distinguish protected-network activity from nearby Wi-Fi noise
 - Sends periodic JSON **status/heartbeat** messages for availability monitoring
+- Supports **Headless Mode** for display-free ESP32 monitoring nodes
 
 ## 👥 Evil Twin detection
 
@@ -69,9 +70,33 @@ The on-screen status cycles between **Learn**, **Clear**, **Sus**, and **HIGH**.
 - **Display library:** TFT_eSPI
 - **Touch input:** `TFT_eSPI getTouch()`
 
+## 🖥️ Headless mode
+
+v1.21 adds a **Headless Mode** for using Deauth Sleuth as an always-on ESP32 Wi-Fi security sensor without a display attached.
+
+In `Deauth-Sleuth/config.h`, set:
+
+```cpp
+#define HEADLESS_MODE 1
+```
+
+When enabled, Deauth Sleuth skips initialization of the CYD TFT, touch interface, RGB LED, splash screen, and CYD SD-card hardware. Deauth/disassoc detection, Evil Twin detection, channel hopping, watched-network matching, and USB Serial JSON continue automatically after boot.
+
+Headless SD support is disabled by default for generic ESP32 boards:
+
+```cpp
+#define HEADLESS_SD_ENABLED 0
+```
+
+Only enable `HEADLESS_SD_ENABLED` if an SD card is intentionally wired to the configured SD pins.
+
+The normal CYD touchscreen build remains the default with `HEADLESS_MODE 0`.
+
+> **Development note:** v1.21 headless mode is intended for ESP32 boards with compatible Wi-Fi/promiscuous-mode support, but generic-board compatibility still needs hardware testing before being considered fully supported.
+
 ## 🏠 USB Serial / Home Assistant integration
 
-The v1.2 development branch adds a machine-readable USB Serial interface while keeping the TFT interface and SD logging intact.
+The v1.21 development branch adds a machine-readable USB Serial interface while keeping the TFT interface and SD logging intact.
 
 Deauth Sleuth emits **one JSON object per line** at `115200` baud. Supported event types are:
 
@@ -147,7 +172,7 @@ millis,ssid,risk_score,state,reasons,known_bssid,suspect_bssid,known_channel,sus
 To flash this project in Arduino IDE, open the sketch and select **LOLIN D32** as the board.
 Although the hardware target is the **ESP32-2432S028R (Cheap Yellow Display / CYD)**, this board option is used for compiling and uploading in Arduino IDE.
 
-This project also relies on **TFT_eSPI**, so your display configuration must match the CYD hardware. A compatible **User_Setup** file has been included in the repo if needed. User-adjustable hardware, UI, scanner, logging, and sensitivity settings are stored in `config.h`. v1.2 also adds USB Serial controls, heartbeat timing, auto-start monitoring, and watched-network lists.
+This project also relies on **TFT_eSPI**, so your display configuration must match the CYD hardware. A compatible **User_Setup** file has been included in the repo if needed. User-adjustable hardware, UI, scanner, logging, and sensitivity settings are stored in `config.h`. v1.21 also adds USB Serial controls, heartbeat timing, auto-start monitoring, and watched-network lists.
 
 Once the board and port are selected, compile and upload normally.
 
